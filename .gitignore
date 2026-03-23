@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# TypeScript build output (individual .js/.d.ts files from tsc --declaration)
+# Note: dist/ is intentionally tracked because GitHub Pages serves it directly.
+# The dist/ folder is also rebuilt by the CI deploy workflow.
+*.tsbuildinfo
+
+# OS / editor artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

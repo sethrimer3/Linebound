@@ -1,0 +1,241 @@
+/* ============================================================
+   style.css — Linebound main stylesheet
+   Structure:
+     1. Reset & base
+     2. Layout
+     3. Build badge
+     4. Main menu
+     5. Game scene
+     6. Shared utilities
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   1. Reset & base
+   ------------------------------------------------------------ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* Colour palette */
+  --color-bg:          #0d0d1a;
+  --color-surface:     #1a1a2e;
+  --color-primary:     #e94560;
+  --color-primary-dk:  #c73652;
+  --color-text:        #e0e0e0;
+  --color-text-muted:  #888;
+  --color-success:     #4caf50;
+  --color-error:       #e94560;
+
+  /* Typography */
+  --font-family: 'Segoe UI', system-ui, sans-serif;
+  --font-size-base: 16px;
+
+  /* Spacing */
+  --gap-sm: 0.5rem;
+  --gap-md: 1rem;
+  --gap-lg: 2rem;
+
+  /* Border radius */
+  --radius: 8px;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  /* Prevent text selection during fast swipe gestures */
+  user-select: none;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------
+   2. Layout — the top-level app shell
+   ------------------------------------------------------------ */
+
+#app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* Each "scene" is a full-viewport layer stacked in #app */
+.scene {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Utility: completely removes an element from layout & visibility */
+.hidden {
+  display: none !important;
+}
+
+/* ------------------------------------------------------------
+   3. Build badge — top-left corner
+   ------------------------------------------------------------ */
+
+#build-badge {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.75rem;
+  z-index: 999;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  pointer-events: none; /* Don't intercept taps/clicks */
+  letter-spacing: 0.03em;
+}
+
+/* ------------------------------------------------------------
+   4. Main menu scene
+   ------------------------------------------------------------ */
+
+#scene-menu {
+  background: var(--color-bg);
+  gap: var(--gap-lg);
+}
+
+/* Game title */
+.menu-title {
+  font-size: clamp(2.5rem, 8vw, 5rem);
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  /* Subtle glow effect */
+  text-shadow:
+    0 0 20px rgba(233, 69, 96, 0.6),
+    0 0 40px rgba(233, 69, 96, 0.2);
+}
+
+/* Container that holds all four menu buttons */
+.menu-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-md);
+  width: 100%;
+  max-width: 320px;
+}
+
+/* Base menu button style */
+.menu-btn {
+  width: 100%;
+  padding: 0.85rem 1.5rem;
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.menu-btn:hover,
+.menu-btn:focus-visible {
+  background: var(--color-primary);
+  color: #fff;
+  outline: none;
+}
+
+.menu-btn:active {
+  transform: scale(0.97);
+}
+
+/* Primary button variant — Start Game */
+.menu-btn.primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.menu-btn.primary:hover,
+.menu-btn.primary:focus-visible {
+  background: var(--color-primary-dk);
+  border-color: var(--color-primary-dk);
+}
+
+/* Inline status message shown below the button list */
+#menu-status {
+  font-size: 0.85rem;
+  margin-top: var(--gap-sm);
+  min-height: 1.2em;
+}
+
+#menu-status.success {
+  color: var(--color-success);
+}
+
+#menu-status.error {
+  color: var(--color-error);
+}
+
+/* ------------------------------------------------------------
+   5. Game scene
+   ------------------------------------------------------------ */
+
+#scene-game {
+  background: #1a1a2e;
+  padding: 0;
+}
+
+/* Full-viewport canvas for game rendering */
+#game-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Back button overlaid on the game canvas — top-right corner */
+#btn-back-to-menu {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 10;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+#btn-back-to-menu:hover,
+#btn-back-to-menu:focus-visible {
+  color: var(--color-text);
+  border-color: rgba(255, 255, 255, 0.7);
+  outline: none;
+}
+
+/* ------------------------------------------------------------
+   6. Shared utilities
+   ------------------------------------------------------------ */
+
+/* Visually hidden but still accessible to screen readers */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
