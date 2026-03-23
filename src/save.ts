@@ -6,9 +6,10 @@
 
 /** Shape of the saved game data. Extend this as the game grows. */
 export interface SaveData {
-  version: number;     // Schema version — bump when the shape changes
-  timestamp: number;   // Unix epoch ms when the save was written
-  playerName: string;  // Defaults to 'Player'; not yet surfaced in gameplay
+  version: number;          // Schema version — bump when the shape changes
+  timestamp: number;        // Unix epoch ms when the save was written
+  playerName: string;       // Defaults to 'Player'; not yet surfaced in gameplay
+  completedLevels: string[]; // IDs of levels the player has completed
 }
 
 /** The localStorage key under which the save is stored. */
@@ -26,6 +27,7 @@ export function createDefaultSave(): SaveData {
     version: SAVE_VERSION,
     timestamp: Date.now(),
     playerName: 'Player',
+    completedLevels: [],
   };
 }
 

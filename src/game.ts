@@ -1,29 +1,75 @@
 /**
  * game.ts
- * Stub for the main game scene. Currently shows a placeholder canvas screen
- * until the game loop and world are implemented in a future iteration.
+ * Main game scene for Linebound.
+ *
+ * Orchestrates two sub-states:
+ *   1. **World Map** — level-select screen drawn on the canvas.
+ *   2. **Gameplay**  — physics simulation, stickman, terrain, camera.
+ *
+ * The render loop runs continuously while the game scene is visible.
  */
 
 import { GameState } from './main';
+import { World } from './physics';
+import { Stickman, createStickman } from './stickman';
+import {
+  parseLevel, getLevelDef, buildWorldMap,
+  type LevelInstance, type MapNode,
+} from './level';
+import {
+  bindInput, unbindInput, resetInput, getInput, pollKeyboard,
+} from './input';
+import {
+  Camera, clearCanvas, drawGround, drawBlocks,
+  drawStickman, drawWorldMap,
+} from './renderer';
+import { loadSave, persistSave } from './save';
 
-/** Identifier string for the game scene element */
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** DOM id for the game scene wrapper. */
 const GAME_SCENE_ID = 'scene-game';
 
-/** Canvas element used for rendering the game world */
+// ---------------------------------------------------------------------------
+// Module state
+// ---------------------------------------------------------------------------
+
+/** Canvas element used for rendering. */
 let canvas: HTMLCanvasElement | null = null;
 
-/** 2D rendering context for the canvas */
+/** 2D rendering context. */
 let ctx: CanvasRenderingContext2D | null = null;
 
-/** ID of the running requestAnimationFrame loop, used to cancel it on exit */
+/** requestAnimationFrame handle for cancellation. */
 let rafId: number | null = null;
 
+/** Current sub-state: 'map' (level select) or 'play' (in a level). */
+let subState: 'map' | 'play' = 'map';
+
+// -- World map state --
+let mapNodes: MapNode[] = [];
+let selectedMapId: string | null = '1-1';
+
+// -- Gameplay state --
+let physicsWorld: World | null = null;
+let playerStick: Stickman | null = null;
+let levelInstance: LevelInstance | null = null;
+let camera: Camera | null = null;
+
+/** Callback to return to the main menu. */
+let onBackCallback: (() => void) | null = null;
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 /**
- * Initialises the game scene: grabs the canvas, sizes it, and starts
- * the stub render loop.
+ * Initialises the game scene: grabs the canvas, sizes it, sets up input,
+ * and starts the render loop. Begins on the world map.
  *
- * @param onBack - Called when the player presses the "Back to Menu" button,
- *                 so main.ts can transition back to the menu state.
+ * @param onBack - Called when the player presses "Back to Menu".
  */
 export function initGame(onBack: () => void): void {
   const scene = document.getElementById(GAME_SCENE_ID);
@@ -31,8 +77,6 @@ export function initGame(onBack: () => void): void {
     console.error('[game] Scene element not found:', GAME_SCENE_ID);
     return;
   }
-
-  // Show the game scene
   scene.classList.remove('hidden');
 
   canvas = document.getElementById('game-canvas') as HTMLCanvasElement | null;
@@ -43,93 +87,224 @@ export function initGame(onBack: () => void): void {
 
   ctx = canvas.getContext('2d');
   resizeCanvas();
-
-  // Resize canvas whenever the window resizes
   window.addEventListener('resize', resizeCanvas);
 
-  // Wire up the back button
-  const backBtn = document.getElementById('btn-back-to-menu');
-  backBtn?.addEventListener('click', () => {
-    stopGame();
-    onBack();
-  });
+  // Bind touch / mouse / keyboard input
+  bindInput(canvas);
 
+  onBackCallback = onBack;
+
+  // Wire up back button
+  const backBtn = document.getElementById('btn-back-to-menu');
+  backBtn?.addEventListener('click', handleBack);
+
+  // Start on the world map
+  enterMap();
   startRenderLoop();
 }
 
 /**
- * Tears down the game scene: cancels the render loop and hides the scene.
- * Called when transitioning back to the main menu.
+ * Tears down the game scene completely.
  */
 export function stopGame(): void {
   if (rafId !== null) {
     cancelAnimationFrame(rafId);
     rafId = null;
   }
-
+  unbindInput();
   window.removeEventListener('resize', resizeCanvas);
+
+  physicsWorld = null;
+  playerStick = null;
+  levelInstance = null;
+  camera = null;
 
   const scene = document.getElementById(GAME_SCENE_ID);
   scene?.classList.add('hidden');
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Sub-state transitions
 // ---------------------------------------------------------------------------
 
+/** Enters the world-map sub-state (level select). */
+function enterMap(): void {
+  subState = 'map';
+  physicsWorld = null;
+  playerStick = null;
+  levelInstance = null;
+
+  // Build map nodes from save data
+  const save = loadSave();
+  const completed = new Set(save?.completedLevels ?? []);
+  mapNodes = buildWorldMap(completed);
+  selectedMapId = mapNodes[0]?.id ?? null;
+}
+
 /**
- * Resizes the canvas to fill the viewport.
- * Called on init and whenever the window resizes.
+ * Enters the gameplay sub-state for a specific level.
  */
+function enterLevel(levelId: string): void {
+  const def = getLevelDef(levelId);
+  if (!def) {
+    console.warn('[game] Level not found:', levelId);
+    return;
+  }
+
+  const instance = parseLevel(def);
+  levelInstance = instance;
+
+  // Create physics world and populate with terrain blocks
+  const world = new World();
+  world.groundY = instance.groundY;
+  world.blocks = instance.blocks;
+  physicsWorld = world;
+
+  // Spawn the player stickman at the level's spawn point
+  playerStick = createStickman(
+    instance.spawnX, instance.spawnY, world, true,
+  );
+
+  // Set up camera
+  camera = new Camera();
+  camera.resize(canvas?.width ?? 800, canvas?.height ?? 600);
+  camera.x = instance.spawnX;
+  camera.y = instance.spawnY - 100;
+
+  subState = 'play';
+}
+
+// ---------------------------------------------------------------------------
+// Event handlers
+// ---------------------------------------------------------------------------
+
+/** Back button handler — returns to map or to main menu. */
+function handleBack(): void {
+  if (subState === 'play') {
+    enterMap();
+  } else {
+    stopGame();
+    onBackCallback?.();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Render loop
+// ---------------------------------------------------------------------------
+
+/** Resizes the canvas to fill the viewport. */
 function resizeCanvas(): void {
   if (!canvas) return;
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
+  camera?.resize(canvas.width, canvas.height);
 }
 
-/**
- * Starts the stub render loop.
- * Draws a placeholder message until real gameplay is implemented.
- */
+/** Starts the main render/update loop. */
 function startRenderLoop(): void {
   let lastTime = performance.now();
 
   function loop(now: number): void {
-    const dt = (now - lastTime) / 1000; // seconds since last frame
+    const dt = Math.min((now - lastTime) / 1000, 1 / 30);
     lastTime = now;
 
-    drawFrame(dt);
+    resetInput();
+    pollKeyboard();
+
+    if (subState === 'map') {
+      updateMap(dt);
+      drawMapFrame();
+    } else {
+      updatePlay(dt);
+      drawPlayFrame(dt);
+    }
+
     rafId = requestAnimationFrame(loop);
   }
 
   rafId = requestAnimationFrame(loop);
 }
 
-/**
- * Renders a single frame.
- * Currently draws a dark background + placeholder text.
- * Replace/extend this with real game rendering.
- *
- * @param _dt - Delta time in seconds (unused in the stub)
- */
-function drawFrame(_dt: number): void {
+// ---------------------------------------------------------------------------
+// Map update & draw
+// ---------------------------------------------------------------------------
+
+/** Handles input on the world map (select level, enter). */
+function updateMap(_dt: number): void {
+  const input = getInput();
+  if (input.jump && selectedMapId) {
+    const node = mapNodes.find(n => n.id === selectedMapId);
+    if (node?.unlocked) {
+      enterLevel(selectedMapId);
+    }
+  }
+}
+
+/** Draws the world map frame. */
+function drawMapFrame(): void {
   if (!ctx || !canvas) return;
+  drawWorldMap(ctx, mapNodes, canvas.width, canvas.height, selectedMapId);
+}
 
-  // Clear to a dark background
-  ctx.fillStyle = '#1a1a2e';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+// ---------------------------------------------------------------------------
+// Gameplay update & draw
+// ---------------------------------------------------------------------------
 
-  // Placeholder centred text
-  ctx.fillStyle = '#e0e0e0';
-  ctx.font = 'bold 28px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('Game coming soon…', canvas.width / 2, canvas.height / 2);
+/** Updates physics, stickman, and input during gameplay. */
+function updatePlay(dt: number): void {
+  if (!physicsWorld || !playerStick) return;
 
-  // Dim subtitle
-  ctx.font = '18px sans-serif';
+  const input = getInput();
+
+  // Jump on swipe-up / tap / spacebar
+  if (input.jump) {
+    playerStick.jump();
+  }
+
+  // Turn around on horizontal swipe / arrow keys
+  if (input.swipeLeft && playerStick.facing === 1) {
+    playerStick.turnAround();
+  } else if (input.swipeRight && playerStick.facing === -1) {
+    playerStick.turnAround();
+  }
+
+  // Update stickman AI / walk cycle before physics step
+  playerStick.update(dt, physicsWorld);
+
+  // Step physics
+  physicsWorld.step(dt);
+
+  // Camera follows player
+  if (camera) {
+    const center = playerStick.center;
+    camera.follow(center.x, center.y - 60, dt);
+  }
+}
+
+/** Draws one gameplay frame: terrain, stickman, UI. */
+function drawPlayFrame(_dt: number): void {
+  if (!ctx || !canvas || !camera || !levelInstance || !playerStick) return;
+
+  clearCanvas(ctx, canvas.width, canvas.height);
+
+  // Apply camera transform for world-space drawing
+  camera.applyTransform(ctx);
+
+  drawGround(ctx, levelInstance.groundY, levelInstance.width);
+  drawBlocks(ctx, levelInstance.blocks);
+  drawStickman(ctx, playerStick);
+
+  ctx.restore(); // Undo camera transform
+
+  // HUD text — level name (screen-space)
   ctx.fillStyle = '#888';
-  ctx.fillText('(Use "Back to Menu" to return)', canvas.width / 2, canvas.height / 2 + 44);
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(
+    `Level ${levelInstance.def.id}: ${levelInstance.def.name}`,
+    60, 12,
+  );
 }
 
 // Re-export the GameState type so other modules can refer to it without
