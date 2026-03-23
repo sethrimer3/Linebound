@@ -100,6 +100,29 @@ const MAX_FALL_SPEED = 600;
 /** Pose-target lerp speed — how fast limbs return to idle posture. */
 const POSE_LERP = 6.0;
 
+/**
+ * Upward force applied to the head each frame (buoyancy / reverse gravity).
+ * Combined with world gravity, net effect is a gentle upward pull on the head
+ * that keeps it from drooping — the head "floats" relative to the torso.
+ * Value > GRAVITY so the net force on the head is slightly upward.
+ */
+const HEAD_BUOYANCY_FORCE = GRAVITY * 1.5;
+
+/**
+ * Extra downward force applied to feet each frame (ground attraction).
+ * Keeps feet anchored toward the ground and prevents legs from floating up.
+ */
+const FOOT_EXTRA_FORCE = GRAVITY * 0.6;
+
+/** Downward force applied to neck while crouching (compresses the torso). */
+const CROUCH_FORCE = 900;
+
+/**
+ * Velocity impulse (px/s) applied to the punching hand when the player
+ * punches toward a target position.
+ */
+const PUNCH_IMPULSE = 320;
+
 // ---------------------------------------------------------------------------
 // Stickman class
 // ---------------------------------------------------------------------------
@@ -151,6 +174,9 @@ export class Stickman {
 
   /** Whether this stickman is alive. */
   alive = true;
+
+  /** True while the player is holding the crouch key. */
+  crouching = false;
 
   constructor(x: number, y: number, isPlayer: boolean) {
     this.isPlayer = isPlayer;
@@ -232,6 +258,20 @@ export class Stickman {
 
     // Apply posture correction — gentle spring-like pull toward idle pose
     this.applyPose(dt);
+
+    // Apply buoyancy to the head: upward force counters gravity so the head
+    // stays at the top of the skeleton instead of drooping down.
+    this.head.addForce(0, -HEAD_BUOYANCY_FORCE);
+
+    // Apply extra downward force to feet: attracts them toward the ground
+    // and prevents the legs from floating upward.
+    this.footL.addForce(0, FOOT_EXTRA_FORCE);
+    this.footR.addForce(0, FOOT_EXTRA_FORCE);
+
+    // Apply crouch forces while the player holds the crouch key
+    if (this.crouching) {
+      this.applyCrouch();
+    }
 
     // Clamp maximum fall speed on all points
     this.clampFallSpeed();
@@ -369,6 +409,19 @@ export class Stickman {
   }
 
   /**
+   * Applies crouch forces: pulls the neck downward toward the pelvis
+   * and lets the knees bend naturally from the constraint response.
+   * Called each frame that `crouching` is true.
+   */
+  private applyCrouch(): void {
+    // Pull the neck down (compresses the torso visually)
+    this.neck.addForce(0, CROUCH_FORCE);
+    // Pull knees inward slightly to lower the pelvis
+    this.kneeL.addForce(0, CROUCH_FORCE * 0.4);
+    this.kneeR.addForce(0, CROUCH_FORCE * 0.4);
+  }
+
+  /**
    * Makes the stickman jump by applying an upward impulse to all points.
    * Only works when at least one foot is grounded.
    */
@@ -386,6 +439,44 @@ export class Stickman {
    */
   turnAround(): void {
     this.facing = (this.facing === 1 ? -1 : 1) as Facing;
+  }
+
+  /**
+   * Launches a punch toward a world-space target position.
+   * Applies a velocity impulse to the leading hand (and elbow) in the
+   * direction from the stickman's center toward the target.
+   * The elastic constraints on the arm will pull the hand back naturally.
+   *
+   * @param targetX - World X of the punch target (e.g. mouse world position)
+   * @param targetY - World Y of the punch target
+   * @param dt      - Frame delta time in seconds (for frame-rate-independent velocity)
+   */
+  punch(targetX: number, targetY: number, dt: number): void {
+    if (!this.alive) return;
+
+    // Direction from torso centre toward the punch target
+    const cx = (this.pelvis.x + this.neck.x) / 2;
+    const cy = (this.pelvis.y + this.neck.y) / 2;
+    const dx = targetX - cx;
+    const dy = targetY - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = dx / len;
+    const ny = dy / len;
+
+    // Choose the hand on the dominant (facing) side for the main punch
+    const punchHand = this.facing === 1 ? this.handR : this.handL;
+    const punchElbow = this.facing === 1 ? this.elbowR : this.elbowL;
+
+    // In Verlet physics, velocity per frame = (x - prevX).
+    // To set a velocity of V px/s at actual frame rate dt:
+    //   prevX = x - V * dt
+    // This is frame-rate-independent (works at 60 Hz, 120 Hz, etc.).
+    const v = PUNCH_IMPULSE * dt;
+    punchHand.prevX = punchHand.x - nx * v;
+    punchHand.prevY = punchHand.y - ny * v;
+    // Elbow follows at half the impulse for a natural arm extension
+    punchElbow.prevX = punchElbow.x - nx * v * 0.5;
+    punchElbow.prevY = punchElbow.y - ny * v * 0.5;
   }
 }
 

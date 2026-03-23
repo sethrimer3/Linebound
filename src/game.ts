@@ -252,20 +252,34 @@ function drawMapFrame(): void {
 
 /** Updates physics, stickman, and input during gameplay. */
 function updatePlay(dt: number): void {
-  if (!physicsWorld || !playerStick) return;
+  if (!physicsWorld || !playerStick || !canvas || !camera) return;
 
   const input = getInput();
 
-  // Jump on swipe-up / tap / spacebar
+  // Jump on swipe-up / tap / spacebar / W / ArrowUp
   if (input.jump) {
     playerStick.jump();
   }
 
-  // Turn around on horizontal swipe / arrow keys
+  // Turn around on horizontal swipe / A,D / ArrowLeft,Right
   if (input.swipeLeft && playerStick.facing === 1) {
     playerStick.turnAround();
   } else if (input.swipeRight && playerStick.facing === -1) {
     playerStick.turnAround();
+  }
+
+  // Crouch while S / ArrowDown is held
+  playerStick.crouching = input.crouch;
+
+  // Punch toward the mouse cursor on click
+  if (input.punch) {
+    // Screen → world coordinate conversion:
+    //   screenX = worldX - camera.x + canvas.width / 2
+    //   worldX  = screenX + camera.x - canvas.width / 2
+    // (same formula applies to Y)
+    const worldPunchX = input.mouseX + camera.x - canvas.width / 2;
+    const worldPunchY = input.mouseY + camera.y - canvas.height / 2;
+    playerStick.punch(worldPunchX, worldPunchY, dt);
   }
 
   // Update stickman AI / walk cycle before physics step
@@ -275,10 +289,8 @@ function updatePlay(dt: number): void {
   physicsWorld.step(dt);
 
   // Camera follows player
-  if (camera) {
-    const center = playerStick.center;
-    camera.follow(center.x, center.y - 60, dt);
-  }
+  const center = playerStick.center;
+  camera.follow(center.x, center.y - 60, dt);
 }
 
 /** Draws one gameplay frame: terrain, stickman, UI. */
