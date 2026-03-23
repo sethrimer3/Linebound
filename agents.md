@@ -7,7 +7,9 @@
 > **IMPORTANT:** With each pull request, you must increment the build number by one in **TWO** places:
 >
 > 1. Update the build number in this file (`agents.md`)
-> 2. Update the build number in the root `index.html` once it exists (the `<meta name="build">` line, or an equivalent version comment)
+> 2. Update the build number in the root `index.html` (the `<meta name="build">` line, or an equivalent version comment)
+>
+> If `index.html` does not yet exist at the time of your PR, only update this file — but add a TODO comment here noting the pending sync (e.g., `<!-- TODO: sync build number to index.html once created -->`). Once `index.html` is created, both locations must always stay in sync.
 
 ---
 
@@ -202,7 +204,7 @@ Brief description of what this file does and its role in the project.
 ## Best Practices
 
 ### When Adding New Code
-- Follow existing code style and patterns (two-space indentation, semicolons, `const`/`let` over `var`)
+- Follow the [Code Style](#code-style) standards defined below
 - Add appropriate comments as you code
 - Create or update the codex file
 - Document any new terminology
@@ -228,6 +230,22 @@ Brief description of what this file does and its role in the project.
 
 ---
 
+## Code Style
+
+Maintain these standards consistently across all JavaScript and HTML files:
+
+- **Indentation:** Two spaces (no tabs)
+- **Semicolons:** Always use trailing semicolons
+- **Variable declarations:** Prefer `const`/`let`; avoid `var`
+- **String literals:** Use template literals `` ` ` `` for string assembly with dynamic content; use single quotes for plain strings
+- **Function size:** Keep functions under **~60 lines of executable code** (not counting blank lines, comments, or closing braces). If a function grows beyond this, consider breaking it into smaller, well-named helpers
+- **Side effects:** Write pure helper functions where possible; keep side effects localized and clearly documented
+- **Data structures:** Favor object literals for configuration data (weapons, abilities, levels); document each key inline with comments
+- **DOM manipulation:** Cache DOM references outside hot paths; avoid repeated `querySelector` calls inside the render loop
+- **Input sanitization:** Sanitize any user-supplied or external data before injecting it into the DOM
+
+---
+
 ## File-Specific Guidelines
 
 ### JavaScript Files
@@ -235,7 +253,7 @@ Brief description of what this file does and its role in the project.
 - Document complex type expectations and data shapes in comments
 - Explain any non-obvious algorithmic choices (physics, collision, AI)
 - Note any global variables introduced and where they're consumed
-- Keep functions under ~60 lines; refactor for readability if they grow larger
+- Keep functions under ~60 lines of **executable code** (see [Code Style](#code-style)); refactor into smaller helpers if they grow larger
 
 ### HTML (`index.html`)
 - Scripts are loaded sequentially with shared globals — **maintain load order**
