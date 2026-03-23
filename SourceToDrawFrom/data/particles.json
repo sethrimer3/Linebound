@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "particles": [
+    {
+      "id": "fire",
+      "style": "fire",
+      "defaults": {
+        "solid": true,
+        "collides": true,
+        "affectedByGravity": true,
+        "gravityScale": -0.18,
+        "damage": 6,
+        "damageRadius": 18,
+        "damageCooldown": 320,
+        "maxLife": 360,
+        "damageOnContact": true
+      }
+    },
+    {
+      "id": "smoke",
+      "style": "smoke",
+      "defaults": {
+        "collides": false,
+        "affectedByGravity": true,
+        "gravityScale": -0.4,
+        "maxLife": 2800,
+        "damageOnContact": false
+      }
+    },
+    {
+      "id": "ember",
+      "style": "ember",
+      "defaults": {
+        "collides": false,
+        "affectedByGravity": true,
+        "gravityScale": -0.15,
+        "maxLife": 420,
+        "damageOnContact": false
+      }
+    },
+    {
+      "id": "ring",
+      "style": "ring",
+      "defaults": {
+        "collides": false,
+        "affectedByGravity": false,
+        "maxLife": 320,
+        "damageOnContact": false
+      }
+    },
+    {
+      "id": "bubble",
+      "style": "bubble",
+      "defaults": {
+        "collides": false,
+        "affectedByGravity": true,
+        "gravityScale": 0.6,
+        "maxLife": 900,
+        "damageOnContact": false
+      }
+    },
+    {
+      "id": "text",
+      "style": "text",
+      "defaults": {
+        "collides": false,
+        "affectedByGravity": false,
+        "maxLife": 2000,
+        "damageOnContact": false
+      }
+    },
+    {
+      "id": "weaponDrop",
+      "style": "weaponDrop",
+      "defaults": {
+        "solid": true,
+        "collides": true,
+        "affectedByGravity": true,
+        "gravityScale": 1,
+        "maxLife": 120000,
+        "damageOnContact": false
+      }
+    },
+    {
+      "id": "sandPuff",
+      "style": "sandPuff",
+      "defaults": {
+        "collides": false,
+        "affectedByGravity": true,
+        "gravityScale": 0.8,
+        "maxLife": 460,
+        "damageOnContact": false
+      }
+    },
+    {
+      "id": "grain",
+      "style": "grain",
+      "defaults": {
+        "collides": false,
+        "affectedByGravity": true,
+        "gravityScale": 1,
+        "maxLife": 420,
+        "damageOnContact": false
+      }
+    },
+    {
+      "id": "sparkle",
+      "style": "sparkle",
+      "defaults": {
+        "collides": false,
+        "affectedByGravity": false,
+        "gravityScale": 0,
+        "maxLife": 380,
+        "damageOnContact": false
+      }
+    },
+    {
+      "id": "splinter",
+      "style": "splinter",
+      "defaults": {
+        "collides": false,
+        "affectedByGravity": true,
+        "gravityScale": 1,
+        "maxLife": 900,
+        "damageOnContact": false
+      }
+    },
+    {
+      "id": "iceTrail",
+      "style": "iceTrail",
+      "defaults": {
+        "collides": false,
+        "affectedByGravity": false,
+        "gravityScale": 0,
+        "maxLife": 600,
+        "damageOnContact": false
+      }
+    }
+  ]
+}

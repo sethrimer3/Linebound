@@ -1,0 +1,9 @@
+{
+  "name": "stick-rpg",
+  "private": true,
+  "scripts": {
+    "build:levels": "node tools/build-level-bundle.js",
+    "prepare": "node tools/build-level-bundle.js",
+    "test": "node tests/validate-data.js"
+  }
+}

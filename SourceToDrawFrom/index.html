@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Legend of Stick RPG — Modular (Drag & Drop Inventory)</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="hud" id="hud"></div>
+  <div id="dragGhost" class="drag-ghost" style="display:none;"></div>
+  <div id="menuOverlay" class="menu-overlay hidden"></div>
+  <div id="skillOverlay" class="skill-overlay hidden"></div>
+  <div id="shopOverlay" class="shop-overlay hidden"></div>
+  <div id="devPanel" class="dev-panel hidden"></div>
+  <!-- Engine & shared -->
+  <script src="js/util.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/physics.js"></script>
+  <script src="js/particle_registry.js"></script>
+  <script src="js/decoration_registry.js"></script>
+  <script src="js/sand.js"></script>
+  <script src="js/powder.js"></script>
+  <script src="js/grass.js"></script>
+  <script src="js/water.js"></script>
+  <script src="js/fire.js"></script>
+  <!-- Gameplay data & helpers -->
+  <script src="js/weapons.js"></script>
+  <script src="js/equipment.js"></script>
+  <script src="js/projectiles.js"></script>
+  <script src="js/summons.js"></script>
+  <script src="js/items.js"></script>
+  <script src="js/abilities.js"></script>
+  <!-- Entities & AI -->
+  <script src="js/stickman/constants.js"></script>
+  <script src="js/stickman/damage_numbers.js"></script>
+  <script src="js/stickman/sword.js"></script>
+  <script src="js/stickman/combat_helpers.js"></script>
+  <script src="js/stickman/combat.js"></script>
+  <script src="js/stickman/render.js"></script>
+  <script src="js/stickman/ai.js"></script>
+  <script src="js/stickman.js"></script>
+  <script src="js/stickman/weapon_rig.js"></script>
+  <script src="js/stickman/weapon_state.js"></script>
+  <script src="js/enemies.js"></script>
+  <script src="js/levels.js"></script>
+  <script src="js/devtools.js"></script>
+  <!-- UI & Input -->
+  <script src="js/hud.js"></script>
+  <script src="js/input.js"></script>
+  <!-- Orchestration -->
+  <script src="js/main.js"></script>
+</body>
+</html>

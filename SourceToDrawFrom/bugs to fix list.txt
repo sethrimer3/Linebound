@@ -1,0 +1,53 @@
+Key/Legend:
+
+[] = unsolved
+[?] = possibly patched
+[/] = mostly patched
+[x] = patched
+
+py1 = low priority
+py2 = medium priority
+py3 = high priority
+py4 = top priority
+
+--------------
+
+Friendly Fire, [x]  (py4)
+World tree block off, []  (py3)
+Random neon platforms, [x] (py2)
+No erasing object in editor, [x]  (py2)
+Water only flows left, [?]  (py1)
+No spikes in editor, [x]  (py2)
+Levels are still shifted over wrong, need to put them to the left, [x]  (py3)
+Stickmen go into stasis when they jump into a block above them, [?]  (py3)
+Swords go long boi, [x]  (py1)
+Players might lose progress made in the world tree after exiting, [?]  (py2)
+Player’s health does not recover when entering a new level, [x]  (py4)
+Doors generate inside of the terrain regardless of where they are placed, [x]  (py4!)
+Janky neon platform physics, []  (py2)
+Ember blade shoots exclusively to the right, [/]  (py1)
+All magic weapons and the ember blade work after death; but only when the dead player is selected, []  (py2)
+The seed volley shoots exclusively to the right, [?] (py2)
+Unable to load created levels from developer mode, [NA]  (NA)
+Sandfall Dunes shifts to the left in editor mode, [x]  (py1)
+Coins and exp are exempt from gravity, [x]  (py1)
+The world tree tome’s hitbox appears to be shifted to the left (I am unsure if this is because I used editor to access it,) [x]  (py1)
+The tome’s interface is broken, []  (py3)
+Water emitters are placed at the same position; regardless of the player’s position, [x] (py2)
+Sand hills have the same problem as water emitters, [x] (py2)
+In editor mode the block cursor is permanently shifted to the left of the mouse, [x] (py3)
+When placing the water spout object it is placed on the highest block under the player, [x] (py1)
+The ember blade’s projectiles are sporadically disabled, [] (py1)
+The testing grounds are obstructed by the interface, [] (py3)
+Spirit weapon needs multiple orbs that circle around, not just one.
+Fire particles need to be actual fire particles, like the water or sand particles.
+Bow needs to be aimed by mouse and not make the player fly as they draw an arrow.
+When the player clicks fast they switch to another stickman, only pressing 1, 2, or 3 should switch. [x]
+The ember blade’s projectiles are sporadically disabled, check whether this is a feature or a bug [] (py1)
+The testing grounds are obstructed by the interface, [] (py3)
+When underground weapon projectiles break, [] (py3)
+Ember bullets break upon contact with allies (Is this a new friendly fire glitch?), [] (py1)
+
+
+
+

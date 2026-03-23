@@ -1,0 +1,13 @@
+Key/Legend:
+[] = Not added yet
+[x] = added
+
+--------------
+
+[x] Make a beacon shine upward from open doors once levels are cleared.
+[x] Inventory opened with “I”.
+[x] Pause the game loop when player is in menu.
+[x] Have a setting to adjust the symbol, color, and opacity of the “player selection” marker that shows which stickman is currently selected. Options will be a circle around the entire stickman, a small triangle-shaped arrow above the stickman’s head, or an outline around the stickman and its armor.
+[x] Give bow a parabola projection?
+[x] Sword gets sheathed on back after not being used for a while.
+

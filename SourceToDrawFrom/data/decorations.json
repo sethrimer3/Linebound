@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "decorations": [
+    {
+      "id": "grass",
+      "label": "Grass",
+      "tool": "grass",
+      "defaults": {
+        "cellSize": 6,
+        "baseDensity": 0.45,
+        "maxDensity": 1,
+        "growthRate": 0.24,
+        "spreadRate": 0.18,
+        "burnRate": 1.4,
+        "regrowDelay": 4,
+        "bladeHeight": 28,
+        "baseColor": "#2ba45a",
+        "highlightColor": "#5ee885",
+        "burntColor": "#4c3f33",
+        "windStrength": 8,
+        "windSpeed": 1.6,
+        "manualOnly": false,
+        "patches": [],
+        "clearings": [],
+        "surfaces": [],
+        "scatter": null
+      }
+    }
+  ]
+}
