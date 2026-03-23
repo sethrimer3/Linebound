@@ -30,6 +30,17 @@ export interface InputState {
   touchX: number;
   /** Current touch/mouse Y in canvas coordinates. */
   touchY: number;
+  /** True while the crouch key (S / ArrowDown) is held. */
+  crouch: boolean;
+  /**
+   * True during the frame a punch was requested (mouse click).
+   * Use `mouseX` / `mouseY` for the target direction.
+   */
+  punch: boolean;
+  /** Latest mouse cursor X in client (canvas) coordinates — always updated. */
+  mouseX: number;
+  /** Latest mouse cursor Y in client (canvas) coordinates — always updated. */
+  mouseY: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,6 +65,10 @@ const state: InputState = {
   touching: false,
   touchX: 0,
   touchY: 0,
+  crouch: false,
+  punch: false,
+  mouseX: 0,
+  mouseY: 0,
 };
 
 /** Touch tracking for swipe detection. */
@@ -80,13 +95,16 @@ export function getInput(): InputState {
 }
 
 /**
- * Resets per-frame input flags (jump, swipe) but keeps held-state (touching).
+ * Resets per-frame input flags (jump, swipe, punch) but keeps held-state (touching, crouch).
  * Call at the START of each frame, before reading input.
  */
 export function resetInput(): void {
   state.jump = false;
   state.swipeLeft = false;
   state.swipeRight = false;
+  state.punch = false;
+  // Note: `crouch` is a held state — it is re-set each frame by pollKeyboard()
+  state.crouch = false;
 }
 
 /**
@@ -137,6 +155,10 @@ export function pollKeyboard(): void {
   }
   if (keysDown.has('ArrowRight') || keysDown.has('d') || keysDown.has('D')) {
     state.swipeRight = true;
+  }
+  // Crouch: S or ArrowDown — held state, true while key is down
+  if (keysDown.has('ArrowDown') || keysDown.has('s') || keysDown.has('S')) {
+    state.crouch = true;
   }
 }
 
@@ -194,44 +216,31 @@ function onTouchEnd(e: TouchEvent): void {
   }
 }
 
-/** Mouse down: mirrors touch start. */
+/** Mouse down: fire a punch toward the current mouse position. */
 function onMouseDown(e: MouseEvent): void {
-  touchStartX = e.clientX;
-  touchStartY = e.clientY;
-  touchStartTime = performance.now();
   state.touching = true;
   state.touchX = e.clientX;
   state.touchY = e.clientY;
+  state.mouseX = e.clientX;
+  state.mouseY = e.clientY;
+  // Mouse click fires a punch toward the cursor position
+  state.punch = true;
 }
 
-/** Mouse move: mirrors touch move. */
+/** Mouse move: always track the cursor position, even when not clicking. */
 function onMouseMove(e: MouseEvent): void {
-  if (!state.touching) return;
-  state.touchX = e.clientX;
-  state.touchY = e.clientY;
+  state.mouseX = e.clientX;
+  state.mouseY = e.clientY;
+  if (state.touching) {
+    state.touchX = e.clientX;
+    state.touchY = e.clientY;
+  }
 }
 
-/** Mouse up: mirrors touch end. */
-function onMouseUp(e: MouseEvent): void {
+/** Mouse up: clear the touching state. Swipe gestures are handled for touch;
+ * for mouse, the punch already fired on mousedown. */
+function onMouseUp(_e: MouseEvent): void {
   state.touching = false;
-
-  const elapsed = performance.now() - touchStartTime;
-  if (elapsed > SWIPE_MAX_DURATION) return;
-
-  const dx = e.clientX - touchStartX;
-  const dy = e.clientY - touchStartY;
-
-  if (Math.abs(dy) > SWIPE_THRESHOLD && dy < 0 && Math.abs(dy) > Math.abs(dx)) {
-    state.jump = true;
-  } else if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
-    if (dx < 0) {
-      state.swipeLeft = true;
-    } else {
-      state.swipeRight = true;
-    }
-  } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
-    state.jump = true;
-  }
 }
 
 /** Key down: track pressed key. */

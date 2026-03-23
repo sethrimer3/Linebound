@@ -456,6 +456,10 @@
   var GAIT_PERIOD = 0.6;
   var MAX_FALL_SPEED = 600;
   var POSE_LERP = 6;
+  var HEAD_BUOYANCY_FORCE = GRAVITY * 1.5;
+  var FOOT_EXTRA_FORCE = GRAVITY * 0.6;
+  var CROUCH_FORCE = 900;
+  var PUNCH_IMPULSE = 320;
   var Stickman = class {
     constructor(x, y, isPlayer) {
       /** Direction the stickman faces: 1 = right, -1 = left. */
@@ -470,6 +474,8 @@
       this.hp = 100;
       /** Whether this stickman is alive. */
       this.alive = true;
+      /** True while the player is holding the crouch key. */
+      this.crouching = false;
       this.isPlayer = isPlayer;
       this.pelvis = new Point(x, y);
       this.pelvis.label = "pelvis";
@@ -534,6 +540,12 @@
         this.applyWalk(dt, world);
       }
       this.applyPose(dt);
+      this.head.addForce(0, -HEAD_BUOYANCY_FORCE);
+      this.footL.addForce(0, FOOT_EXTRA_FORCE);
+      this.footR.addForce(0, FOOT_EXTRA_FORCE);
+      if (this.crouching) {
+        this.applyCrouch();
+      }
       this.clampFallSpeed();
     }
     /**
@@ -664,6 +676,16 @@
       }
     }
     /**
+     * Applies crouch forces: pulls the neck downward toward the pelvis
+     * and lets the knees bend naturally from the constraint response.
+     * Called each frame that `crouching` is true.
+     */
+    applyCrouch() {
+      this.neck.addForce(0, CROUCH_FORCE);
+      this.kneeL.addForce(0, CROUCH_FORCE * 0.4);
+      this.kneeR.addForce(0, CROUCH_FORCE * 0.4);
+    }
+    /**
      * Makes the stickman jump by applying an upward impulse to all points.
      * Only works when at least one foot is grounded.
      */
@@ -679,6 +701,33 @@
      */
     turnAround() {
       this.facing = this.facing === 1 ? -1 : 1;
+    }
+    /**
+     * Launches a punch toward a world-space target position.
+     * Applies a velocity impulse to the leading hand (and elbow) in the
+     * direction from the stickman's center toward the target.
+     * The elastic constraints on the arm will pull the hand back naturally.
+     *
+     * @param targetX - World X of the punch target (e.g. mouse world position)
+     * @param targetY - World Y of the punch target
+     * @param dt      - Frame delta time in seconds (for frame-rate-independent velocity)
+     */
+    punch(targetX, targetY, dt) {
+      if (!this.alive) return;
+      const cx = (this.pelvis.x + this.neck.x) / 2;
+      const cy = (this.pelvis.y + this.neck.y) / 2;
+      const dx = targetX - cx;
+      const dy = targetY - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = dx / len;
+      const ny = dy / len;
+      const punchHand = this.facing === 1 ? this.handR : this.handL;
+      const punchElbow = this.facing === 1 ? this.elbowR : this.elbowL;
+      const v = PUNCH_IMPULSE * dt;
+      punchHand.prevX = punchHand.x - nx * v;
+      punchHand.prevY = punchHand.y - ny * v;
+      punchElbow.prevX = punchElbow.x - nx * v * 0.5;
+      punchElbow.prevY = punchElbow.y - ny * v * 0.5;
     }
   };
   function createStickman(x, y, world, isPlayer = true) {
@@ -838,7 +887,11 @@
     swipeRight: false,
     touching: false,
     touchX: 0,
-    touchY: 0
+    touchY: 0,
+    crouch: false,
+    punch: false,
+    mouseX: 0,
+    mouseY: 0
   };
   var touchStartX = 0;
   var touchStartY = 0;
@@ -852,6 +905,8 @@
     state.jump = false;
     state.swipeLeft = false;
     state.swipeRight = false;
+    state.punch = false;
+    state.crouch = false;
   }
   function bindInput(canvas2) {
     unbindInput();
@@ -880,6 +935,9 @@
     }
     if (keysDown.has("ArrowRight") || keysDown.has("d") || keysDown.has("D")) {
       state.swipeRight = true;
+    }
+    if (keysDown.has("ArrowDown") || keysDown.has("s") || keysDown.has("S")) {
+      state.crouch = true;
     }
   }
   function onTouchStart(e) {
@@ -922,35 +980,23 @@
     }
   }
   function onMouseDown(e) {
-    touchStartX = e.clientX;
-    touchStartY = e.clientY;
-    touchStartTime = performance.now();
     state.touching = true;
     state.touchX = e.clientX;
     state.touchY = e.clientY;
+    state.mouseX = e.clientX;
+    state.mouseY = e.clientY;
+    state.punch = true;
   }
   function onMouseMove(e) {
-    if (!state.touching) return;
-    state.touchX = e.clientX;
-    state.touchY = e.clientY;
-  }
-  function onMouseUp(e) {
-    state.touching = false;
-    const elapsed = performance.now() - touchStartTime;
-    if (elapsed > SWIPE_MAX_DURATION) return;
-    const dx = e.clientX - touchStartX;
-    const dy = e.clientY - touchStartY;
-    if (Math.abs(dy) > SWIPE_THRESHOLD && dy < 0 && Math.abs(dy) > Math.abs(dx)) {
-      state.jump = true;
-    } else if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
-      if (dx < 0) {
-        state.swipeLeft = true;
-      } else {
-        state.swipeRight = true;
-      }
-    } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
-      state.jump = true;
+    state.mouseX = e.clientX;
+    state.mouseY = e.clientY;
+    if (state.touching) {
+      state.touchX = e.clientX;
+      state.touchY = e.clientY;
     }
+  }
+  function onMouseUp(_e) {
+    state.touching = false;
   }
   function onKeyDown(e) {
     keysDown.add(e.key);
@@ -1311,7 +1357,7 @@
     drawWorldMap(ctx, mapNodes, canvas.width, canvas.height, selectedMapId);
   }
   function updatePlay(dt) {
-    if (!physicsWorld || !playerStick) return;
+    if (!physicsWorld || !playerStick || !canvas || !camera) return;
     const input = getInput();
     if (input.jump) {
       playerStick.jump();
@@ -1321,12 +1367,16 @@
     } else if (input.swipeRight && playerStick.facing === -1) {
       playerStick.turnAround();
     }
+    playerStick.crouching = input.crouch;
+    if (input.punch) {
+      const worldPunchX = input.mouseX + camera.x - canvas.width / 2;
+      const worldPunchY = input.mouseY + camera.y - canvas.height / 2;
+      playerStick.punch(worldPunchX, worldPunchY, dt);
+    }
     playerStick.update(dt, physicsWorld);
     physicsWorld.step(dt);
-    if (camera) {
-      const center = playerStick.center;
-      camera.follow(center.x, center.y - 60, dt);
-    }
+    const center = playerStick.center;
+    camera.follow(center.x, center.y - 60, dt);
   }
   function drawPlayFrame(_dt) {
     if (!ctx || !canvas || !camera || !levelInstance || !playerStick) return;
