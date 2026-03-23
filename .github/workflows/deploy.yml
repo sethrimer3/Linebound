@@ -1,0 +1,68 @@
+# deploy.yml
+# Builds the TypeScript source and deploys the game to GitHub Pages.
+# Triggered on every push to the main branch.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  # Allow manual triggering from the Actions tab
+  workflow_dispatch:
+
+# Grant the GITHUB_TOKEN the permissions needed to deploy Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment; cancel any in-progress run
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      # 1. Check out the repository
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Set up Node.js (matches the version used locally)
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      # 3. Install dependencies (esbuild + TypeScript)
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. Type-check the TypeScript source
+      - name: Type check
+        run: npm run typecheck
+
+      # 5. Bundle TypeScript into dist/bundle.js
+      - name: Build
+        run: npm run build
+
+      # 6. Configure the GitHub Pages artifact (upload from repo root)
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Serve the repo root (index.html + css/ + dist/)
+          path: "."
+
+      # 7. Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

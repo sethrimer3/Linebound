@@ -2,14 +2,15 @@
 
 ## Build Information
 
-**Current Build Number: 1**
+**Current Build Number: 2**
 
-> **IMPORTANT:** With each pull request, you must increment the build number by one in **TWO** places:
+> **IMPORTANT:** With each pull request, you must increment the build number by one in **THREE** places:
 >
-> 1. Update the build number in this file (`agents.md`)
-> 2. Update the build number in the root `index.html` (the `<meta name="build">` line, or an equivalent version comment)
+> 1. Update the build number in this file (`agents.md`) — the `**Current Build Number:**` line above
+> 2. Update the `<meta name="build" content="N">` tag in `index.html`
+> 3. Update the visible `<div id="build-badge">build N</div>` text in `index.html`
 >
-> If `index.html` does not yet exist at the time of your PR, only update this file — but add a TODO comment here noting the pending sync (e.g., `<!-- TODO: sync build number to index.html once created -->`). Once `index.html` is created, both locations must always stay in sync.
+> All three values must always stay in sync. The build badge is rendered in the top-left corner of every screen so players and developers can easily identify which version is running.
 
 ---
 
