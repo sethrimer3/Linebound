@@ -124,6 +124,33 @@ const CROUCH_FORCE = 900;
  */
 const PUNCH_IMPULSE = 320;
 
+/** Radius within which a punch registers a hit (world pixels). */
+export const PUNCH_HIT_RADIUS = 22;
+
+/** Base damage for an unarmed punch. */
+export const PUNCH_DAMAGE = 15;
+
+/**
+ * Damage multiplier applied to weapon.dmg to produce hit damage.
+ * E.g. sword (dmg=2) × 10 = 20 damage per hit.
+ */
+export const WEAPON_DAMAGE_SCALE = 10;
+
+/** Damage dealt by each enemy stickman punch to the player. */
+export const ENEMY_PUNCH_DAMAGE = 10;
+
+/** Default maximum HP for enemy stickmen. */
+export const ENEMY_STICKMAN_HP = 60;
+
+/** Distance (px) within which an enemy starts tracking the player. */
+const ENEMY_AGGRO_RANGE = 500;
+
+/** Distance (px) within which an enemy stops walking and attacks. */
+const ENEMY_ATTACK_RANGE = 65;
+
+/** Seconds between enemy punch attacks. */
+const ENEMY_ATTACK_COOLDOWN = 1.6;
+
 // ---------------------------------------------------------------------------
 // Stickman class
 // ---------------------------------------------------------------------------
@@ -184,6 +211,35 @@ export class Stickman {
 
   /** True while the player is holding the crouch key. */
   crouching = false;
+
+  /**
+   * Optional stroke-color override for rendering.
+   * Null → default white (player). Set to a color string for enemy stickmen.
+   */
+  strokeColor: string | null = null;
+
+  /** Maximum hit points — used to compute the HP bar fill ratio. */
+  maxHp = 100;
+
+  /**
+   * Timer in seconds for the hit-flash visual effect.
+   * Set to a small positive value on damage; renderer flashes white while > 0.
+   */
+  hitFlashTimer = 0;
+
+  /**
+   * Countdown (seconds) until this dead stickman is fully removed from the world.
+   *   -1 → alive (normal state)
+   *   ≥ 0 → dying ragdoll; removed when this reaches ≤ 0
+   */
+  deathTimer = -1;
+
+  /**
+   * Pulse flag: set to true for the single frame that `aiUpdate` fires a punch.
+   * Read by game.ts to trigger hit detection; cleared at the start of each
+   * `aiUpdate` call.
+   */
+  justPunched = false;
 
   constructor(x: number, y: number, isPlayer: boolean) {
     this.isPlayer = isPlayer;
@@ -254,6 +310,12 @@ export class Stickman {
    * Called BEFORE the physics world step so forces/targets are set up.
    */
   update(dt: number, world: World): void {
+    // Tick hit-flash timer regardless of alive state so the flash fades out
+    // even after the stickman dies.
+    if (this.hitFlashTimer > 0) {
+      this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dt);
+    }
+
     if (!this.alive) return;
 
     // Tick weapon cooldown down each frame
@@ -502,6 +564,101 @@ export class Stickman {
     // Elbow follows at half the impulse for a natural arm extension
     punchElbow.prevX = punchElbow.x - nx * v * 0.5;
     punchElbow.prevY = punchElbow.y - ny * v * 0.5;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Combat and damage
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Reduces HP by `amount`, triggers death when HP reaches zero.
+   * Sets `hitFlashTimer` to show a brief white flash on the renderer.
+   *
+   * @param amount - Raw damage (positive integer; must be ≥ 1)
+   */
+  takeDamage(amount: number): void {
+    if (!this.alive) return;
+
+    this.hp = Math.max(0, this.hp - amount);
+    this.hitFlashTimer = 0.14; // brief white flash on screen
+
+    if (this.hp <= 0) {
+      this.alive = false;
+      this.walking = false;
+      // Ragdoll for 2.8 seconds then remove from physics world
+      this.deathTimer = 2.8;
+    }
+  }
+
+  /**
+   * Returns true if the stickman's active punch hand is within `range` pixels
+   * of the given world position. Used for hit detection after calling punch().
+   *
+   * @param worldX - World X to check against
+   * @param worldY - World Y to check against
+   * @param range  - Hit radius in world pixels
+   */
+  punchHandNear(worldX: number, worldY: number, range: number): boolean {
+    const hand = this.facing === 1 ? this.handR : this.handL;
+    return Math.hypot(hand.x - worldX, hand.y - worldY) <= range;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Enemy AI
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Enemy AI update: steers the stickman toward a target and attacks in range.
+   * Call this each frame for non-player stickmen in place of manual input.
+   *
+   * State machine:
+   *   • Outside ENEMY_AGGRO_RANGE → idle (stop walking)
+   *   • Inside ENEMY_AGGRO_RANGE  → face target and walk toward it
+   *   • Inside ENEMY_ATTACK_RANGE → stop; punch when attackCooldown is 0
+   *
+   * Sets `justPunched = true` for exactly one frame when a punch fires so
+   * game.ts can resolve hit detection on the same frame.
+   *
+   * @param dt      - Frame delta time in seconds
+   * @param _world  - Physics world (reserved for future pathfinding use)
+   * @param targetX - World X of the target (player pelvis)
+   * @param targetY - World Y of the target (player pelvis)
+   */
+  aiUpdate(
+    dt: number,
+    _world: World,
+    targetX: number,
+    targetY: number,
+  ): void {
+    // Reset the one-shot pulse flag at the start of every AI tick
+    this.justPunched = false;
+
+    if (!this.alive) return;
+
+    const myX = this.pelvis.x;
+    const dist = Math.abs(targetX - myX);
+
+    // Outside aggro range — stand idle
+    if (dist > ENEMY_AGGRO_RANGE) {
+      this.walking = false;
+      return;
+    }
+
+    // Always face the player
+    this.facing = (targetX > myX ? 1 : -1) as Facing;
+
+    if (dist <= ENEMY_ATTACK_RANGE) {
+      // Close enough to attack — stop walking and punch when ready
+      this.walking = false;
+      if (this.attackCooldown <= 0) {
+        this.punch(targetX, targetY, dt);
+        this.attackCooldown = ENEMY_ATTACK_COOLDOWN;
+        this.justPunched = true;
+      }
+    } else {
+      // Walk toward the player
+      this.walking = true;
+    }
   }
 }
 

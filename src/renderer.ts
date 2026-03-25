@@ -64,6 +64,11 @@ const COLORS = {
   slimeHighlight: 'rgba(200, 255, 210, 0.55)',
   slimeEye: '#ffffff',
   slimePupil: '#1a1a1a',
+  // Enemy stickman colors — red/crimson to distinguish from the player
+  enemyStickman: '#ff4040',
+  enemyStickmanHead: '#ff4040',
+  // Hit flash — bright white flashes when any stickman takes damage
+  hitFlash: '#ffffff',
 };
 
 // ---------------------------------------------------------------------------
@@ -575,19 +580,43 @@ function drawSlime(ctx: CanvasRenderingContext2D, slime: Slime): void {
  *   • Arms: neck → elbow → hand (two segments per arm)
  *   • Legs: pelvis → knee → foot (two segments per leg)
  *   • Hands & feet: small filled squares
+ *
+ * Visual effects:
+ *   • `strokeColor` — custom body/head color (default white for player, red for enemies)
+ *   • `hitFlashTimer` — stickman flashes white briefly when damaged
+ *   • `deathTimer` — dying stickman fades out over its ragdoll period
+ *
+ * @param ctx     - Canvas context (world coordinates)
+ * @param s       - The stickman to draw
+ * @param options - Optional rendering overrides
  */
 export function drawStickman(
-  ctx: CanvasRenderingContext2D, s: Stickman,
+  ctx: CanvasRenderingContext2D,
+  s: Stickman,
+  options?: { showHpBar?: boolean },
 ): void {
-  if (!s.alive) return;
+  // Stickmen with deathTimer === -1 and !alive have been fully removed — skip
+  if (!s.alive && s.deathTimer < 0) return;
 
-  ctx.strokeStyle = COLORS.stickman;
+  // Dying stickmen (alive=false, deathTimer≥0) fade out over their last second
+  if (!s.alive && s.deathTimer >= 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, s.deathTimer));
+  }
+
+  // Hit-flash: render the whole skeleton white while hitFlashTimer > 0
+  const flashing = s.hitFlashTimer > 0;
+  const bodyColor = flashing ? COLORS.hitFlash : (s.strokeColor ?? COLORS.stickman);
+  const headFill  = flashing ? COLORS.hitFlash : (s.strokeColor ?? COLORS.stickmanHead);
+  const extFill   = flashing ? COLORS.hitFlash : COLORS.stickmanExtremity;
+
+  ctx.strokeStyle = bodyColor;
   ctx.lineWidth = 2.5;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
   // -- Head (circle) --
-  ctx.fillStyle = COLORS.stickmanHead;
+  ctx.fillStyle = headFill;
   ctx.beginPath();
   ctx.arc(s.head.x, s.head.y, HEAD_RADIUS, 0, Math.PI * 2);
   ctx.fill();
@@ -608,11 +637,12 @@ export function drawStickman(
   drawLine(ctx, s.kneeL.x, s.kneeL.y, s.footL.x, s.footL.y);
 
   // -- Right leg (pelvis → kneeR → footR) --
+  drawLine(ctx, s.pelvis.x, s.pelvis.y, s.kneeR.x, s.pelvis.y);
   drawLine(ctx, s.pelvis.x, s.pelvis.y, s.kneeR.x, s.kneeR.y);
   drawLine(ctx, s.kneeR.x, s.kneeR.y, s.footR.x, s.footR.y);
 
   // -- Hands (small squares) --
-  ctx.fillStyle = COLORS.stickmanExtremity;
+  ctx.fillStyle = extFill;
   drawSquare(ctx, s.handL.x, s.handL.y, EXTREMITY_SIZE);
   drawSquare(ctx, s.handR.x, s.handR.y, EXTREMITY_SIZE);
 
@@ -621,16 +651,25 @@ export function drawStickman(
   drawSquare(ctx, s.footR.x, s.footR.y, EXTREMITY_SIZE);
 
   // -- Joint dots (elbows and knees) --
-  ctx.fillStyle = COLORS.stickman;
+  ctx.fillStyle = bodyColor;
   drawDot(ctx, s.elbowL.x, s.elbowL.y, 2);
   drawDot(ctx, s.elbowR.x, s.elbowR.y, 2);
   drawDot(ctx, s.kneeL.x, s.kneeL.y, 2);
   drawDot(ctx, s.kneeR.x, s.kneeR.y, 2);
 
-  // -- Equipped weapon --
-  // Draw the weapon extending from the dominant hand in the facing direction.
-  if (s.weapon) {
+  // -- Equipped weapon (only when alive) --
+  if (s.weapon && s.alive) {
     drawHeldWeapon(ctx, s);
+  }
+
+  // -- HP bar (drawn above head when damaged, if requested) --
+  if (options?.showHpBar && s.alive && s.hp < s.maxHp) {
+    drawStickmanHpBar(ctx, s);
+  }
+
+  // Restore alpha from death-fade
+  if (!s.alive && s.deathTimer >= 0) {
+    ctx.restore();
   }
 }
 
