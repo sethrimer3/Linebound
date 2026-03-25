@@ -20,6 +20,7 @@ import { Block } from './physics';
 import { Stickman, HEAD_RADIUS, EXTREMITY_SIZE } from './stickman';
 import { LevelInstance, MapNode, WeaponPickup, TILE_SIZE } from './level';
 import { WeaponDef } from './weapons';
+import { PlayerStats, computeEffectiveStats, xpForLevel } from './upgrades';
 
 // ---------------------------------------------------------------------------
 // Colors
@@ -387,6 +388,70 @@ function drawWeaponIcon(ctx: CanvasRenderingContext2D, weapon: WeaponDef): void 
 }
 
 /**
+ * Draws the level exit marker at the given world position.
+ * Renders a glowing arched doorway to show the player where the goal is.
+ *
+ * @param ctx   - Canvas context (already in world coordinates)
+ * @param x     - World x of the exit tile centre
+ * @param y     - World y of the exit tile centre
+ * @param time  - Current time in seconds (for pulsing glow)
+ */
+export function drawExitMarker(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  time: number,
+): void {
+  const pulse = 0.55 + 0.25 * Math.sin(time * 2 * Math.PI);
+  const w = 22;
+  const h = 34;
+
+  // Glow halo around the door
+  ctx.save();
+  ctx.globalAlpha = pulse * 0.4;
+  const grad = ctx.createRadialGradient(x, y - h / 2, 4, x, y - h / 2, 32);
+  grad.addColorStop(0, '#4cff96');
+  grad.addColorStop(1, 'rgba(76, 255, 150, 0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y - h / 2, 32, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Door frame — two pillars
+  ctx.fillStyle = '#5a7a60';
+  ctx.fillRect(x - w / 2 - 4, y - h, 5, h);   // left pillar
+  ctx.fillRect(x + w / 2 - 1, y - h, 5, h);   // right pillar
+
+  // Arch (semicircle top)
+  ctx.strokeStyle = '#5a7a60';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(x + 1.5, y - h, w / 2 + 2, Math.PI, 0);
+  ctx.stroke();
+
+  // Door fill — glowing green portal
+  ctx.save();
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#1e4d2e';
+  ctx.fillRect(x - w / 2, y - h, w, h);
+  // Inner glow
+  const innerGrad = ctx.createLinearGradient(x, y - h, x, y);
+  innerGrad.addColorStop(0, 'rgba(76, 255, 120, 0.6)');
+  innerGrad.addColorStop(1, 'rgba(76, 255, 120, 0.05)');
+  ctx.fillStyle = innerGrad;
+  ctx.fillRect(x - w / 2, y - h, w, h);
+  ctx.restore();
+
+  // 'EXIT' label above
+  ctx.fillStyle = '#4cff96';
+  ctx.font = 'bold 9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('EXIT', x, y - h - 4);
+}
+
+/**
  * Draws a Stickman on the canvas.
  *
  * Anatomy rendered:
@@ -547,8 +612,25 @@ function drawHeldWeapon(ctx: CanvasRenderingContext2D, s: Stickman): void {
 }
 
 /**
- * Draws the world map: nodes for each level, connected by paths.
- * Nodes show lock/unlock/complete state.
+ * Width of the stats panel in pixels.
+ * Must match the reservation in drawWorldMap (subtracted from mapW).
+ */
+const STATS_PANEL_WIDTH = 180;
+
+/**
+ * Draws the world map: nodes for each level connected by prerequisite paths,
+ * plus a player stats panel in the top-right corner.
+ *
+ * Paths are drawn using each node's `connections` list (its prerequisites)
+ * rather than sequential index order, so branching layouts are supported.
+ *
+ * @param ctx        - Canvas rendering context
+ * @param nodes      - Level nodes built by buildWorldMap()
+ * @param screenW    - Canvas width in pixels
+ * @param screenH    - Canvas height in pixels
+ * @param selectedId - ID of the currently highlighted node (or null)
+ * @param stats      - Player stats to display in the corner panel
+ * @param levelUpMsg - Optional level-up banner text (fades out over time)
  */
 export function drawWorldMap(
   ctx: CanvasRenderingContext2D,
@@ -556,6 +638,8 @@ export function drawWorldMap(
   screenW: number,
   screenH: number,
   selectedId: string | null,
+  stats: PlayerStats,
+  levelUpMsg?: string,
 ): void {
   // Background
   ctx.fillStyle = COLORS.bg;
@@ -570,36 +654,45 @@ export function drawWorldMap(
 
   if (nodes.length === 0) return;
 
-  // Convert normalised positions to screen coords with padding
+  // Convert normalised positions to screen coords with padding.
+  // Leave extra right padding for the stats panel.
   const padX = 80;
   const padY = 100;
-  const mapW = screenW - padX * 2;
+  const mapW = screenW - padX * 2 - STATS_PANEL_WIDTH; // reserve space for stats panel
   const mapH = screenH - padY * 2;
 
-  const screenNodes = nodes.map(n => ({
-    ...n,
-    sx: padX + n.x * mapW,
-    sy: padY + n.y * mapH,
-  }));
+  // Build a lookup from id → screen position for path drawing
+  const nodeById = new Map<string, { sx: number; sy: number }>();
+  const screenNodes = nodes.map(n => {
+    const sn = {
+      ...n,
+      sx: padX + n.x * mapW,
+      sy: padY + n.y * mapH,
+    };
+    nodeById.set(n.id, { sx: sn.sx, sy: sn.sy });
+    return sn;
+  });
 
-  // Draw paths between sequential nodes
+  // Draw prerequisite paths — connect each node back to its required nodes
   ctx.strokeStyle = COLORS.mapPath;
   ctx.lineWidth = 3;
   ctx.setLineDash([6, 4]);
-  for (let i = 1; i < screenNodes.length; i++) {
-    const prev = screenNodes[i - 1]!;
-    const curr = screenNodes[i]!;
-    ctx.beginPath();
-    ctx.moveTo(prev.sx, prev.sy);
-    ctx.lineTo(curr.sx, curr.sy);
-    ctx.stroke();
+  for (const n of screenNodes) {
+    for (const reqId of n.connections) {
+      const parent = nodeById.get(reqId);
+      if (!parent) continue;
+      ctx.beginPath();
+      ctx.moveTo(parent.sx, parent.sy);
+      ctx.lineTo(n.sx, n.sy);
+      ctx.stroke();
+    }
   }
   ctx.setLineDash([]);
 
   // Draw nodes
   const nodeRadius = 18;
   for (const n of screenNodes) {
-    // Node circle
+    // Fill color: locked = grey, completed = green, unlocked = node color
     let fillColor = COLORS.mapNodeLocked;
     if (n.completed) fillColor = COLORS.mapNodeCompleted;
     else if (n.unlocked) fillColor = n.color;
@@ -625,14 +718,14 @@ export function drawWorldMap(
     ctx.arc(n.sx, n.sy, nodeRadius, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Level name label below
+    // Level name label below node
     ctx.fillStyle = n.unlocked ? COLORS.text : COLORS.muted;
     ctx.font = '13px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillText(n.name, n.sx, n.sy + nodeRadius + 8);
 
-    // Level id above
+    // Level id above node
     ctx.fillStyle = COLORS.muted;
     ctx.font = 'bold 11px sans-serif';
     ctx.textBaseline = 'bottom';
@@ -648,14 +741,133 @@ export function drawWorldMap(
     }
   }
 
+  // ---- Stats panel (top-right corner) ----
+  drawStatsPanel(ctx, stats, screenW);
+
+  // ---- Level-up banner ----
+  if (levelUpMsg) {
+    ctx.fillStyle = '#ffe066';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(levelUpMsg, screenW / 2, 80);
+  }
+
   // Instructions at bottom
   ctx.fillStyle = COLORS.muted;
   ctx.font = '14px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
   ctx.fillText(
-    'Tap a level to play  •  Swipe up or press Space to start',
+    'Tap a level to play  •  Space/Enter to start  •  1/2/3: spend skill pts  •  R: reset skills',
     screenW / 2, screenH - 20,
+  );
+}
+
+/**
+ * Draws the player stat panel in the top-right corner of the world map.
+ * Shows level, XP bar, effective stats, and skill-point spending hints.
+ *
+ * @param ctx    - Canvas rendering context
+ * @param stats  - Player stats to display
+ * @param screenW - Canvas width
+ */
+function drawStatsPanel(
+  ctx: CanvasRenderingContext2D,
+  stats: PlayerStats,
+  screenW: number,
+): void {
+  const effective = computeEffectiveStats(stats);
+  const panelW = 170;
+  const panelH = 210;
+  const panelX = screenW - panelW - 10;
+  const panelY = 10;
+  const pad = 10;
+
+  // Panel background
+  ctx.fillStyle = 'rgba(13, 13, 26, 0.88)';
+  ctx.strokeStyle = '#333355';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(panelX, panelY, panelW, panelH, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  let y = panelY + pad;
+
+  // Title row
+  ctx.fillStyle = COLORS.primary;
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('Player Stats', panelX + pad, y);
+  y += 20;
+
+  // Level row
+  ctx.fillStyle = '#ffe066';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText(`Level ${stats.level}`, panelX + pad, y);
+  y += 18;
+
+  // XP bar
+  const barW = panelW - pad * 2;
+  const barH = 8;
+  const xpRatio = stats.xpToNext > 0 ? Math.min(1, stats.xp / stats.xpToNext) : 0;
+  ctx.fillStyle = '#222244';
+  ctx.fillRect(panelX + pad, y, barW, barH);
+  ctx.fillStyle = '#7b68ee';
+  ctx.fillRect(panelX + pad, y, Math.round(barW * xpRatio), barH);
+  ctx.strokeStyle = '#444466';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(panelX + pad, y, barW, barH);
+  y += barH + 4;
+
+  // XP numbers
+  ctx.fillStyle = COLORS.muted;
+  ctx.font = '10px sans-serif';
+  ctx.fillText(`XP: ${stats.xp} / ${stats.xpToNext}`, panelX + pad, y);
+  y += 16;
+
+  // Divider
+  ctx.strokeStyle = '#333355';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(panelX + pad, y);
+  ctx.lineTo(panelX + panelW - pad, y);
+  ctx.stroke();
+  y += 8;
+
+  // Effective stat rows
+  const statLines = [
+    { label: '❤ HP', value: `${effective.maxHp}`, pts: stats.skills.health, key: '1' },
+    { label: '⚔ ATK', value: `×${effective.attackMult.toFixed(2)}`, pts: stats.skills.attack, key: '2' },
+    { label: '🛡 DEF', value: `${effective.defense}`, pts: stats.skills.defense, key: '3' },
+  ];
+  for (const row of statLines) {
+    ctx.fillStyle = COLORS.text;
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${row.label}: ${row.value}`, panelX + pad, y);
+    // Skill allocation indicator
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`[${row.pts}pts]  [${row.key}]`, panelX + panelW - pad, y + 2);
+    y += 18;
+  }
+
+  y += 4;
+
+  // Skill points available
+  const hasPoints = stats.skillPoints > 0;
+  ctx.fillStyle = hasPoints ? '#ffe066' : COLORS.muted;
+  ctx.font = hasPoints ? 'bold 11px sans-serif' : '11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(
+    hasPoints
+      ? `★ ${stats.skillPoints} skill pts available!`
+      : 'No skill points available',
+    panelX + pad, y,
   );
 }
 

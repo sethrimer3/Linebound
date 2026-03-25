@@ -7,6 +7,12 @@
  *   2. **Gameplay**  — physics simulation, stickman, terrain, camera.
  *
  * The render loop runs continuously while the game scene is visible.
+ *
+ * Upgrade flow:
+ *   • Completing a level (reaching the exit tile) awards XP from the LevelDef.
+ *   • XP accumulates and triggers level-ups; each level-up grants skill points.
+ *   • On the world map, press 1/2/3 to spend skill points in health/attack/defense.
+ *   • Press R to reset (respec) all skill allocations.
  */
 
 import { GameState } from './main';
@@ -21,9 +27,13 @@ import {
 } from './input';
 import {
   Camera, clearCanvas, drawGround, drawBlocks,
-  drawStickman, drawWorldMap, drawWeaponPickups,
+  drawStickman, drawWorldMap, drawWeaponPickups, drawExitMarker,
 } from './renderer';
 import { loadSave, persistSave } from './save';
+import {
+  addXp, spendSkillPoint, resetSkills, createDefaultStats,
+  SKILL_POINTS_PER_LEVEL, type PlayerStats,
+} from './upgrades';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -31,6 +41,21 @@ import { loadSave, persistSave } from './save';
 
 /** DOM id for the game scene wrapper. */
 const GAME_SCENE_ID = 'scene-game';
+
+/**
+ * World-space radius within which the player's pelvis triggers the exit.
+ * Large enough to be easy to hit while still requiring the player to reach it.
+ */
+const EXIT_COLLECT_RADIUS = 32;
+
+/** Pre-computed squared exit radius to avoid per-frame sqrt. */
+const EXIT_COLLECT_RADIUS_SQ = EXIT_COLLECT_RADIUS * EXIT_COLLECT_RADIUS;
+
+/**
+ * Duration in seconds the level-up banner is shown on the world map
+ * after earning enough XP to advance.
+ */
+const LEVEL_UP_BANNER_DURATION = 3.5;
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -52,13 +77,19 @@ let subState: 'map' | 'play' = 'map';
 let mapNodes: MapNode[] = [];
 let selectedMapId: string | null = '1-1';
 
+/** Banner text shown on the world map (level-up notification, etc.). */
+let mapBannerText = '';
+
+/** Remaining seconds to display the map banner before it clears. */
+let mapBannerTimer = 0;
+
 // -- Gameplay state --
 let physicsWorld: World | null = null;
 let playerStick: Stickman | null = null;
 let levelInstance: LevelInstance | null = null;
 let camera: Camera | null = null;
 
-/** Accumulated gameplay time in seconds (used for pickup animation). */
+/** Accumulated gameplay time in seconds (used for pickup and exit animation). */
 let gameTime = 0;
 
 /** Callback to return to the main menu. */
@@ -137,7 +168,7 @@ function enterMap(): void {
   playerStick = null;
   levelInstance = null;
 
-  // Build map nodes from save data
+  // Rebuild map nodes from persisted save data
   const save = loadSave();
   const completed = new Set(save?.completedLevels ?? []);
   mapNodes = buildWorldMap(completed);
@@ -235,21 +266,73 @@ function startRenderLoop(): void {
 // Map update & draw
 // ---------------------------------------------------------------------------
 
-/** Handles input on the world map (select level, enter). */
-function updateMap(_dt: number): void {
+/** Handles input on the world map: level selection, skill spending. */
+function updateMap(dt: number): void {
   const input = getInput();
+
+  // Tick map banner timer — clears the banner after a few seconds
+  if (mapBannerTimer > 0) {
+    mapBannerTimer -= dt;
+    if (mapBannerTimer <= 0) {
+      mapBannerTimer = 0;
+      mapBannerText = '';
+    }
+  }
+
+  // Enter the selected level on jump/space
   if (input.jump && selectedMapId) {
     const node = mapNodes.find(n => n.id === selectedMapId);
     if (node?.unlocked) {
       enterLevel(selectedMapId);
+      return;
     }
   }
+
+  // Skill point spending — 1/2/3 keys map to health/attack/defense
+  const save = loadSave();
+  if (!save) return;
+  const stats: PlayerStats = save.playerStats;
+
+  let changed = false;
+  if (input.skill1 && spendSkillPoint(stats, 'health')) {
+    changed = true;
+    showMapBanner('Invested in ❤ Health!');
+  }
+  if (input.skill2 && spendSkillPoint(stats, 'attack')) {
+    changed = true;
+    showMapBanner('Invested in ⚔ Attack!');
+  }
+  if (input.skill3 && spendSkillPoint(stats, 'defense')) {
+    changed = true;
+    showMapBanner('Invested in 🛡 Defense!');
+  }
+
+  // R key resets all skill allocations
+  if (input.respec) {
+    resetSkills(stats);
+    changed = true;
+    showMapBanner('Skills reset — all points refunded.');
+  }
+
+  if (changed) {
+    save.playerStats = stats;
+    persistSave(save);
+  }
+}
+
+/** Sets the map banner text and resets its display timer. */
+function showMapBanner(text: string): void {
+  mapBannerText = text;
+  mapBannerTimer = LEVEL_UP_BANNER_DURATION;
 }
 
 /** Draws the world map frame. */
 function drawMapFrame(): void {
   if (!ctx || !canvas) return;
-  drawWorldMap(ctx, mapNodes, canvas.width, canvas.height, selectedMapId);
+  const save = loadSave();
+  const stats: PlayerStats = save?.playerStats ?? createDefaultStats();
+  const banner = mapBannerTimer > 0 ? mapBannerText : undefined;
+  drawWorldMap(ctx, mapNodes, canvas.width, canvas.height, selectedMapId, stats, banner);
 }
 
 // ---------------------------------------------------------------------------
@@ -312,6 +395,9 @@ function updatePlay(dt: number): void {
 
   // Check weapon pickup collection — player pelvis is the collection point
   checkWeaponPickups();
+
+  // Check if the player has reached the level exit
+  checkExitReached();
 }
 
 /**
@@ -338,7 +424,55 @@ function checkWeaponPickups(): void {
   }
 }
 
-/** Draws one gameplay frame: terrain, stickman, UI. */
+/**
+ * Checks whether the player has reached the exit tile.
+ * On first contact: marks the level complete, awards XP, handles level-up,
+ * persists the save, and returns to the world map.
+ */
+function checkExitReached(): void {
+  if (!levelInstance || !playerStick) return;
+  if (levelInstance.exitX === undefined || levelInstance.exitY === undefined) return;
+
+  const px = playerStick.pelvis.x;
+  const py = playerStick.pelvis.y;
+  const dx = px - levelInstance.exitX;
+  const dy = py - levelInstance.exitY;
+
+  if (dx * dx + dy * dy > EXIT_COLLECT_RADIUS_SQ) return;
+
+  // Player has reached the exit — complete the level
+  const levelId = levelInstance.def.id;
+  const xpReward = levelInstance.def.xpReward ?? 80;
+
+  const save = loadSave();
+  if (!save) return;
+
+  // Mark level as completed (deduplicated)
+  if (!save.completedLevels.includes(levelId)) {
+    save.completedLevels.push(levelId);
+  }
+
+  // Award XP and check for level-up
+  const levelsGained = addXp(save.playerStats, xpReward);
+
+  // Build a notification message for the world map banner
+  if (levelsGained > 0) {
+    const plural = levelsGained > 1 ? 'levels' : 'level';
+    const pts = levelsGained * SKILL_POINTS_PER_LEVEL;
+    showMapBanner(
+      `Level Complete! +${xpReward} XP  •  Level Up! (${levelsGained} ${plural})  •  +${pts} skill pts`,
+    );
+  } else {
+    showMapBanner(`Level Complete! +${xpReward} XP`);
+  }
+
+  persistSave(save);
+
+  // Return to world map, refreshing node unlock states
+  enterMap();
+}
+
+/** Draws one gameplay frame: terrain, stickman, exit marker, UI. */
 function drawPlayFrame(_dt: number): void {
   if (!ctx || !canvas || !camera || !levelInstance || !playerStick) return;
 
@@ -349,6 +483,12 @@ function drawPlayFrame(_dt: number): void {
 
   drawGround(ctx, levelInstance.groundY, levelInstance.width);
   drawBlocks(ctx, levelInstance.blocks);
+
+  // Draw the exit marker so the player can see where the goal is
+  if (levelInstance.exitX !== undefined && levelInstance.exitY !== undefined) {
+    drawExitMarker(ctx, levelInstance.exitX, levelInstance.exitY, gameTime);
+  }
+
   // Draw weapon pickups in world space (before stickman so player renders on top)
   drawWeaponPickups(ctx, levelInstance.weaponPickups, gameTime);
   drawStickman(ctx, playerStick);
