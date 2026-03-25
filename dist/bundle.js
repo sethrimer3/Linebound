@@ -474,6 +474,10 @@
       this.hp = 100;
       /** Whether this stickman is alive. */
       this.alive = true;
+      /** Currently equipped weapon, or null for unarmed. */
+      this.weapon = null;
+      /** Cooldown timer in seconds remaining before the next attack is allowed. */
+      this.attackCooldown = 0;
       /** True while the player is holding the crouch key. */
       this.crouching = false;
       this.isPlayer = isPlayer;
@@ -535,6 +539,9 @@
      */
     update(dt, world) {
       if (!this.alive) return;
+      if (this.attackCooldown > 0) {
+        this.attackCooldown = Math.max(0, this.attackCooldown - dt);
+      }
       this.airborne = !this.onGround;
       if (this.walking && !this.airborne) {
         this.applyWalk(dt, world);
@@ -703,6 +710,17 @@
       this.facing = this.facing === 1 ? -1 : 1;
     }
     /**
+     * Equips a weapon (or removes the current one when null is passed).
+     * Safe to call mid-game; the renderer will pick up the change on the
+     * next frame.
+     *
+     * @param weapon - The WeaponDef to equip, or null to go unarmed.
+     */
+    equipWeapon(weapon) {
+      this.weapon = weapon;
+      this.attackCooldown = 0;
+    }
+    /**
      * Launches a punch toward a world-space target position.
      * Applies a velocity impulse to the leading hand (and elbow) in the
      * direction from the stickman's center toward the target.
@@ -784,19 +802,103 @@
     world.addConstraint(c);
   }
 
+  // src/weapons.ts
+  var WEAPON_REGISTRY = {
+    // ---- Sword ---------------------------------------------------------------
+    // Classic one-handed melee weapon: moderate range, quick cooldown.
+    // The baseline starter weapon found in level 1-1.
+    sword: {
+      id: "sword",
+      name: "Sword",
+      kind: "melee",
+      grip: "oneHand",
+      range: 42,
+      arc: 1,
+      dmg: 2,
+      cooldown: 550,
+      swingDuration: 220,
+      knock: 160,
+      color: "#d0d0ff",
+      highlightColor: "#ffffff",
+      bladeLength: 36
+    },
+    // ---- Dagger --------------------------------------------------------------
+    // Short, fast weapon: half the range of a sword but nearly double the
+    // attack rate. Great for quick enemies in tight corridors.
+    dagger: {
+      id: "dagger",
+      name: "Dagger",
+      kind: "melee",
+      grip: "oneHand",
+      range: 28,
+      arc: 0.8,
+      dmg: 1,
+      cooldown: 320,
+      swingDuration: 140,
+      knock: 90,
+      color: "#ffd36b",
+      highlightColor: "#fff5cc",
+      bladeLength: 22
+    },
+    // ---- Greatsword ----------------------------------------------------------
+    // Slow two-hander with a wide sweeping arc. High damage and knockback
+    // but the long cooldown leaves the wielder briefly vulnerable.
+    greatsword: {
+      id: "greatsword",
+      name: "Greatsword",
+      kind: "melee",
+      grip: "twoHand",
+      range: 64,
+      arc: 1.2,
+      dmg: 4,
+      cooldown: 820,
+      swingDuration: 320,
+      knock: 260,
+      color: "#a3d8ff",
+      highlightColor: "#dff0ff",
+      bladeLength: 56
+    },
+    // ---- Bow -----------------------------------------------------------------
+    // Ranged weapon that fires a projectile in the stickman's facing direction.
+    // `range` here represents projectile launch speed (px/s).
+    // Wide arc is unused for ranged weapons.
+    bow: {
+      id: "bow",
+      name: "Bow",
+      kind: "ranged",
+      grip: "twoHand",
+      range: 520,
+      // projectile speed px/s
+      arc: 0.05,
+      // slight spread
+      dmg: 3,
+      cooldown: 700,
+      swingDuration: 0,
+      // no swing animation for ranged
+      knock: 120,
+      color: "#8b6914",
+      highlightColor: "#c8a84b",
+      bladeLength: 28
+      // visual arrow length
+    }
+  };
+  function getWeaponDef(id) {
+    return WEAPON_REGISTRY[id];
+  }
+
   // src/level.ts
   var TILE_SIZE = 40;
   var LEVEL_1_1 = {
     id: "1-1",
     name: "First Steps",
-    mapX: 0.2,
+    mapX: 0.15,
     mapY: 0.5,
     unlocked: true,
     requires: [],
     spawnCol: 2,
     spawnRow: 13,
     tiles: [
-      // 30-column layout
+      // 30-column layout — meadow biome
       "..............................",
       "..............................",
       "..............................",
@@ -805,28 +907,138 @@
       "..............ppppp...........",
       "..............................",
       "..............................",
-      "........ppppp.........pppp...",
+      "........ppppp.........pppp....",
+      "..............................",
+      "......@.......................",
+      "...ppppp..........pppp........",
       "..............................",
       "..............................",
-      "...ppppp..........pppp.......",
-      "..............................",
-      "..............................",
-      "..........>...................",
+      "...................>..........",
       "##############################"
+    ]
+  };
+  var LEVEL_1_2 = {
+    id: "1-2",
+    name: "Stone Bridge",
+    mapX: 0.35,
+    mapY: 0.4,
+    unlocked: false,
+    requires: ["1-1"],
+    spawnCol: 1,
+    spawnRow: 13,
+    color: "#7a9abf",
+    tiles: [
+      // 36-column layout — stone/grey biome
+      "....................................",
+      "....................................",
+      "....................................",
+      "....................................",
+      "....................................",
+      "............pppppppp................",
+      "....................................",
+      "............@.......................",
+      "....ppppp..........ppppp............",
+      "....................................",
+      "....................................",
+      "....................................",
+      "....................................",
+      "....................................",
+      "........>...........................",
+      "########......####......############"
+    ]
+  };
+  var LEVEL_1_3 = {
+    id: "1-3",
+    name: "Underground Cave",
+    mapX: 0.55,
+    mapY: 0.65,
+    unlocked: false,
+    requires: ["1-2"],
+    color: "#5a4a7a",
+    spawnCol: 1,
+    spawnRow: 14,
+    tiles: [
+      // 32-column layout — underground/cave biome
+      "################################",
+      "################################",
+      "################################",
+      "#############################..#",
+      "######################.......##.",
+      "#################..........###..",
+      "###########..............####...",
+      "#######....................###..",
+      "###.........................##..",
+      "#....@......................##..",
+      "#.......................>....##.",
+      "#...........................###.",
+      "#.........................#####.",
+      "##.....................#######..",
+      "##.......................######.",
+      "##########################...##.",
+      "################################",
+      "################################"
+    ]
+  };
+  var LEVEL_2_1 = {
+    id: "2-1",
+    name: "Grasslands",
+    mapX: 0.75,
+    mapY: 0.3,
+    unlocked: false,
+    requires: ["1-3"],
+    color: "#4caf50",
+    spawnCol: 1,
+    spawnRow: 15,
+    tiles: [
+      // 50-column layout — bright meadow/grasslands biome
+      "..................................................",
+      "..................................................",
+      "..................................................",
+      "..................................................",
+      "...........................pppppp.................",
+      "..................................................",
+      "..................................................",
+      ".......pppppp...............................ppppp.",
+      "..................................................",
+      "..................................................",
+      "...ppppp.........ppppp......pppppp................",
+      "..................................................",
+      ".....@..........W.......................W.........",
+      "...ppppp.........ppppp......pppppp................",
+      "..................................................",
+      "..................................................",
+      ".......................................>..........",
+      "##################################################"
     ]
   };
   var LEVELS = /* @__PURE__ */ new Map();
   function registerBuiltinLevels() {
     LEVELS.set(LEVEL_1_1.id, LEVEL_1_1);
+    LEVELS.set(LEVEL_1_2.id, LEVEL_1_2);
+    LEVELS.set(LEVEL_1_3.id, LEVEL_1_3);
+    LEVELS.set(LEVEL_2_1.id, LEVEL_2_1);
   }
   registerBuiltinLevels();
   function getLevelDef(id) {
     return LEVELS.get(id);
   }
+  var WEAPON_TILE_MAP = {
+    "@": "sword",
+    // Generic weapon pickup — grants a sword
+    "S": "sword",
+    // Sword pedestal
+    "D": "dagger",
+    // Dagger pedestal
+    "G": "greatsword",
+    // Greatsword pedestal
+    "W": "bow"
+    // Bow pedestal
+  };
   function parseLevel(def) {
     const rows = def.tiles.length;
     const cols = def.tiles[0]?.length ?? 0;
     const blocks = [];
+    const weaponPickups = [];
     for (let r = 0; r < rows; r++) {
       const row = def.tiles[r] ?? "";
       for (let c = 0; c < cols; c++) {
@@ -845,6 +1057,17 @@
             w: TILE_SIZE,
             h: 6
           });
+        } else if (ch && ch in WEAPON_TILE_MAP) {
+          const weaponId = WEAPON_TILE_MAP[ch];
+          const weapon = getWeaponDef(weaponId);
+          if (weapon) {
+            weaponPickups.push({
+              x: c * TILE_SIZE + TILE_SIZE / 2,
+              y: r * TILE_SIZE + TILE_SIZE / 2,
+              weapon,
+              collected: false
+            });
+          }
         }
       }
     }
@@ -853,6 +1076,7 @@
     return {
       def,
       blocks,
+      weaponPickups,
       spawnX: def.spawnCol * TILE_SIZE + TILE_SIZE / 2,
       spawnY: def.spawnRow * TILE_SIZE,
       width,
@@ -1017,8 +1241,16 @@
     primaryDk: "#c73652",
     text: "#e0e0e0",
     muted: "#888888",
-    block: "#2a2a4e",
-    blockEdge: "#3a3a5e",
+    // Underground blocks — dark earth fill
+    block: "#2d1f12",
+    blockEdge: "#3d2a18",
+    // Surface blocks — slightly lighter brown dirt with grass on top
+    blockSurface: "#3a2410",
+    blockSurfaceEdge: "#4a3020",
+    // Grass strip on exposed block tops
+    grass: "#3a8c30",
+    grassHighlight: "#52c444",
+    // Thin platform color
     platform: "#4a4a6e",
     ground: "#333355",
     stickman: "#e0e0e0",
@@ -1028,7 +1260,10 @@
     mapPath: "#333355",
     mapNodeLocked: "#444444",
     mapNodeUnlocked: "#e94560",
-    mapNodeCompleted: "#4caf50"
+    mapNodeCompleted: "#4caf50",
+    // Weapon pickup glow
+    pickupGlow: "rgba(255, 220, 80, 0.55)",
+    pickupIcon: "#ffe066"
   };
   var Camera = class {
     constructor() {
@@ -1096,13 +1331,123 @@
     ctx2.lineTo(levelWidth + 500, groundY);
     ctx2.stroke();
   }
-  function drawBlocks(ctx2, blocks) {
+  function buildOccupiedSet(blocks) {
+    const occupied = /* @__PURE__ */ new Set();
     for (const b of blocks) {
-      ctx2.fillStyle = b.h < TILE_SIZE ? COLORS.platform : COLORS.block;
+      if (b.h >= TILE_SIZE / 2) {
+        occupied.add(`${b.x},${b.y}`);
+      }
+    }
+    return occupied;
+  }
+  function drawBlocks(ctx2, blocks) {
+    const occupied = buildOccupiedSet(blocks);
+    for (const b of blocks) {
+      const isPlatform = b.h < TILE_SIZE / 2;
+      if (isPlatform) {
+        ctx2.fillStyle = COLORS.platform;
+        ctx2.fillRect(b.x, b.y, b.w, b.h);
+        ctx2.strokeStyle = COLORS.blockEdge;
+        ctx2.lineWidth = 1;
+        ctx2.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1);
+        continue;
+      }
+      const aboveKey = `${b.x},${b.y - TILE_SIZE}`;
+      const isExposed = !occupied.has(aboveKey);
+      ctx2.fillStyle = isExposed ? COLORS.blockSurface : COLORS.block;
       ctx2.fillRect(b.x, b.y, b.w, b.h);
-      ctx2.strokeStyle = COLORS.blockEdge;
+      ctx2.strokeStyle = isExposed ? COLORS.blockSurfaceEdge : COLORS.blockEdge;
       ctx2.lineWidth = 1;
       ctx2.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1);
+      if (isExposed) {
+        drawGrassTop(ctx2, b.x, b.y, b.w);
+      }
+    }
+  }
+  var BLADE_SPACING = 5;
+  var BLADE_WIDTH = 2;
+  var BLADE_HEIGHT_SHORT = 3;
+  var BLADE_HEIGHT_TALL = 5;
+  function drawGrassTop(ctx2, bx, by, bw) {
+    ctx2.fillStyle = COLORS.grass;
+    ctx2.fillRect(bx, by, bw, 3);
+    ctx2.fillStyle = COLORS.grassHighlight;
+    ctx2.fillRect(bx, by, bw, 2);
+    ctx2.fillStyle = COLORS.grass;
+    for (let bx2 = bx + 2; bx2 < bx + bw - 2; bx2 += BLADE_SPACING) {
+      const bladeH = Math.floor((bx2 - bx) / BLADE_SPACING) % 3 === 0 ? BLADE_HEIGHT_TALL : BLADE_HEIGHT_SHORT;
+      ctx2.fillRect(bx2, by - bladeH + 2, BLADE_WIDTH, bladeH);
+    }
+  }
+  function drawWeaponPickups(ctx2, pickups, time) {
+    for (const p of pickups) {
+      if (p.collected) continue;
+      const floatY = p.y - 18 + Math.sin(time * Math.PI) * 3;
+      const alpha = 0.35 + 0.2 * Math.sin(time * 2 * Math.PI);
+      ctx2.save();
+      ctx2.globalAlpha = alpha;
+      ctx2.fillStyle = COLORS.pickupGlow;
+      ctx2.beginPath();
+      ctx2.arc(p.x, floatY, 14, 0, Math.PI * 2);
+      ctx2.fill();
+      ctx2.restore();
+      ctx2.save();
+      ctx2.translate(p.x, floatY);
+      drawWeaponIcon(ctx2, p.weapon);
+      ctx2.restore();
+      ctx2.fillStyle = COLORS.pickupIcon;
+      ctx2.font = "bold 9px sans-serif";
+      ctx2.textAlign = "center";
+      ctx2.textBaseline = "top";
+      ctx2.fillText(p.weapon.name, p.x, floatY + 14);
+    }
+  }
+  function drawWeaponIcon(ctx2, weapon) {
+    const color = weapon.color;
+    const len = (weapon.bladeLength ?? 28) * 0.4;
+    ctx2.strokeStyle = color;
+    ctx2.fillStyle = color;
+    ctx2.lineWidth = 2;
+    ctx2.lineCap = "round";
+    if (weapon.kind === "ranged") {
+      ctx2.beginPath();
+      ctx2.arc(0, 0, len * 0.8, -Math.PI * 0.6, Math.PI * 0.6);
+      ctx2.stroke();
+      ctx2.beginPath();
+      ctx2.moveTo(0, -len * 0.7);
+      ctx2.lineTo(0, len * 0.7);
+      ctx2.stroke();
+      ctx2.beginPath();
+      ctx2.moveTo(-len * 0.5, 0);
+      ctx2.lineTo(len * 0.6, 0);
+      ctx2.stroke();
+      ctx2.beginPath();
+      ctx2.moveTo(len * 0.6, 0);
+      ctx2.lineTo(len * 0.35, -4);
+      ctx2.lineTo(len * 0.35, 4);
+      ctx2.closePath();
+      ctx2.fill();
+    } else {
+      ctx2.beginPath();
+      ctx2.moveTo(0, len * 0.9);
+      ctx2.lineTo(0, -len * 0.3);
+      ctx2.stroke();
+      ctx2.beginPath();
+      ctx2.moveTo(-2, -len * 0.3);
+      ctx2.lineTo(0, -len * 0.9);
+      ctx2.lineTo(2, -len * 0.3);
+      ctx2.closePath();
+      ctx2.fill();
+      ctx2.beginPath();
+      ctx2.moveTo(-len * 0.5, len * 0.35);
+      ctx2.lineTo(len * 0.5, len * 0.35);
+      ctx2.stroke();
+      ctx2.lineWidth = 3;
+      ctx2.strokeStyle = "#7a5a30";
+      ctx2.beginPath();
+      ctx2.moveTo(0, len * 0.35);
+      ctx2.lineTo(0, len * 0.9);
+      ctx2.stroke();
     }
   }
   function drawStickman(ctx2, s) {
@@ -1134,6 +1479,69 @@
     drawDot(ctx2, s.elbowR.x, s.elbowR.y, 2);
     drawDot(ctx2, s.kneeL.x, s.kneeL.y, 2);
     drawDot(ctx2, s.kneeR.x, s.kneeR.y, 2);
+    if (s.weapon) {
+      drawHeldWeapon(ctx2, s);
+    }
+  }
+  function drawHeldWeapon(ctx2, s) {
+    const w = s.weapon;
+    const hand = s.facing === 1 ? s.handR : s.handL;
+    const elbow = s.facing === 1 ? s.elbowR : s.elbowL;
+    const bladeLen = w.bladeLength ?? w.range * 0.85;
+    const color = w.color;
+    const highlight = w.highlightColor ?? "#ffffff";
+    ctx2.save();
+    ctx2.lineCap = "round";
+    if (w.kind === "ranged") {
+      const hx = (s.handL.x + s.handR.x) / 2;
+      const hy = (s.handL.y + s.handR.y) / 2;
+      ctx2.strokeStyle = color;
+      ctx2.lineWidth = 3;
+      ctx2.beginPath();
+      const bowRadius = bladeLen * 0.5;
+      const bowAngle = 0.7;
+      const startAngle = -Math.PI / 2 - bowAngle;
+      const endAngle = -Math.PI / 2 + bowAngle;
+      ctx2.arc(hx - s.facing * bowRadius * 0.3, hy, bowRadius, startAngle, endAngle);
+      ctx2.stroke();
+      ctx2.strokeStyle = highlight;
+      ctx2.lineWidth = 1;
+      ctx2.beginPath();
+      ctx2.moveTo(s.handL.x, s.handL.y);
+      ctx2.lineTo(s.handR.x, s.handR.y);
+      ctx2.stroke();
+    } else {
+      const angle = Math.atan2(
+        hand.y - elbow.y,
+        hand.x - elbow.x
+      );
+      const tipX = hand.x + Math.cos(angle) * bladeLen;
+      const tipY = hand.y + Math.sin(angle) * bladeLen;
+      ctx2.strokeStyle = color;
+      ctx2.lineWidth = 3;
+      ctx2.beginPath();
+      ctx2.moveTo(hand.x, hand.y);
+      ctx2.lineTo(tipX, tipY);
+      ctx2.stroke();
+      ctx2.strokeStyle = highlight;
+      ctx2.lineWidth = 1;
+      ctx2.globalAlpha = 0.55;
+      ctx2.beginPath();
+      ctx2.moveTo(hand.x + 1, hand.y);
+      ctx2.lineTo(tipX + 1, tipY);
+      ctx2.stroke();
+      ctx2.globalAlpha = 1;
+      const guardLen = w.grip === "twoHand" ? 8 : 5;
+      const perpX = -Math.sin(angle) * guardLen;
+      const perpY = Math.cos(angle) * guardLen;
+      ctx2.strokeStyle = "#7a5a30";
+      ctx2.lineWidth = 2.5;
+      ctx2.beginPath();
+      ctx2.moveTo(hand.x - perpX, hand.y - perpY);
+      ctx2.lineTo(hand.x + perpX, hand.y + perpY);
+      ctx2.stroke();
+    }
+    ctx2.restore();
   }
   function drawWorldMap(ctx2, nodes, screenW, screenH, selectedId) {
     ctx2.fillStyle = COLORS.bg;
@@ -1240,6 +1648,7 @@
   var playerStick = null;
   var levelInstance = null;
   var camera = null;
+  var gameTime = 0;
   var onBackCallback = null;
   function initGame(onBack) {
     const scene = document.getElementById(GAME_SCENE_ID);
@@ -1295,6 +1704,7 @@
     }
     const instance = parseLevel(def);
     levelInstance = instance;
+    gameTime = 0;
     const world = new World();
     world.groundY = instance.groundY;
     world.blocks = instance.blocks;
@@ -1356,8 +1766,11 @@
     if (!ctx || !canvas) return;
     drawWorldMap(ctx, mapNodes, canvas.width, canvas.height, selectedMapId);
   }
+  var PICKUP_COLLECT_RADIUS = 30;
+  var PICKUP_COLLECT_RADIUS_SQ = PICKUP_COLLECT_RADIUS * PICKUP_COLLECT_RADIUS;
   function updatePlay(dt) {
     if (!physicsWorld || !playerStick || !canvas || !camera) return;
+    gameTime += dt;
     const input = getInput();
     if (input.jump) {
       playerStick.jump();
@@ -1377,6 +1790,21 @@
     physicsWorld.step(dt);
     const center = playerStick.center;
     camera.follow(center.x, center.y - 60, dt);
+    checkWeaponPickups();
+  }
+  function checkWeaponPickups() {
+    if (!levelInstance || !playerStick) return;
+    const px = playerStick.pelvis.x;
+    const py = playerStick.pelvis.y;
+    for (const pickup of levelInstance.weaponPickups) {
+      if (pickup.collected) continue;
+      const dx = px - pickup.x;
+      const dy = py - pickup.y;
+      if (dx * dx + dy * dy <= PICKUP_COLLECT_RADIUS_SQ) {
+        playerStick.equipWeapon(pickup.weapon);
+        pickup.collected = true;
+      }
+    }
   }
   function drawPlayFrame(_dt) {
     if (!ctx || !canvas || !camera || !levelInstance || !playerStick) return;
@@ -1384,6 +1812,7 @@
     camera.applyTransform(ctx);
     drawGround(ctx, levelInstance.groundY, levelInstance.width);
     drawBlocks(ctx, levelInstance.blocks);
+    drawWeaponPickups(ctx, levelInstance.weaponPickups, gameTime);
     drawStickman(ctx, playerStick);
     ctx.restore();
     ctx.fillStyle = "#888";
@@ -1395,6 +1824,13 @@
       60,
       12
     );
+    if (playerStick.weapon) {
+      ctx.fillStyle = "#ffe066";
+      ctx.font = "bold 13px sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "bottom";
+      ctx.fillText(`\u2694 ${playerStick.weapon.name}`, 60, canvas.height - 20);
+    }
   }
 
   // src/main.ts

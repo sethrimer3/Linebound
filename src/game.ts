@@ -21,7 +21,7 @@ import {
 } from './input';
 import {
   Camera, clearCanvas, drawGround, drawBlocks,
-  drawStickman, drawWorldMap,
+  drawStickman, drawWorldMap, drawWeaponPickups,
 } from './renderer';
 import { loadSave, persistSave } from './save';
 
@@ -57,6 +57,9 @@ let physicsWorld: World | null = null;
 let playerStick: Stickman | null = null;
 let levelInstance: LevelInstance | null = null;
 let camera: Camera | null = null;
+
+/** Accumulated gameplay time in seconds (used for pickup animation). */
+let gameTime = 0;
 
 /** Callback to return to the main menu. */
 let onBackCallback: (() => void) | null = null;
@@ -154,6 +157,9 @@ function enterLevel(levelId: string): void {
   const instance = parseLevel(def);
   levelInstance = instance;
 
+  // Reset gameplay timer so pickup animations start fresh
+  gameTime = 0;
+
   // Create physics world and populate with terrain blocks
   const world = new World();
   world.groundY = instance.groundY;
@@ -250,9 +256,21 @@ function drawMapFrame(): void {
 // Gameplay update & draw
 // ---------------------------------------------------------------------------
 
+/**
+ * Radius in world pixels within which the player can collect a weapon pickup.
+ * The player's pelvis position is used as the collection center.
+ */
+const PICKUP_COLLECT_RADIUS = 30;
+
+/** Pre-computed squared pickup collection radius to avoid per-frame multiply. */
+const PICKUP_COLLECT_RADIUS_SQ = PICKUP_COLLECT_RADIUS * PICKUP_COLLECT_RADIUS;
+
 /** Updates physics, stickman, and input during gameplay. */
 function updatePlay(dt: number): void {
   if (!physicsWorld || !playerStick || !canvas || !camera) return;
+
+  // Accumulate gameplay time for animations
+  gameTime += dt;
 
   const input = getInput();
 
@@ -291,6 +309,33 @@ function updatePlay(dt: number): void {
   // Camera follows player
   const center = playerStick.center;
   camera.follow(center.x, center.y - 60, dt);
+
+  // Check weapon pickup collection — player pelvis is the collection point
+  checkWeaponPickups();
+}
+
+/**
+ * Checks if the player is close enough to any uncollected weapon pickup
+ * and automatically equips it.  The pickup is marked collected so it
+ * disappears from the level on the next draw.
+ */
+function checkWeaponPickups(): void {
+  if (!levelInstance || !playerStick) return;
+
+  const px = playerStick.pelvis.x;
+  const py = playerStick.pelvis.y;
+
+  for (const pickup of levelInstance.weaponPickups) {
+    if (pickup.collected) continue;
+
+    const dx = px - pickup.x;
+    const dy = py - pickup.y;
+    if (dx * dx + dy * dy <= PICKUP_COLLECT_RADIUS_SQ) {
+      // Player is close enough — equip the weapon
+      playerStick.equipWeapon(pickup.weapon);
+      pickup.collected = true;
+    }
+  }
 }
 
 /** Draws one gameplay frame: terrain, stickman, UI. */
@@ -304,6 +349,8 @@ function drawPlayFrame(_dt: number): void {
 
   drawGround(ctx, levelInstance.groundY, levelInstance.width);
   drawBlocks(ctx, levelInstance.blocks);
+  // Draw weapon pickups in world space (before stickman so player renders on top)
+  drawWeaponPickups(ctx, levelInstance.weaponPickups, gameTime);
   drawStickman(ctx, playerStick);
 
   ctx.restore(); // Undo camera transform
@@ -317,6 +364,15 @@ function drawPlayFrame(_dt: number): void {
     `Level ${levelInstance.def.id}: ${levelInstance.def.name}`,
     60, 12,
   );
+
+  // HUD — equipped weapon name (bottom-left)
+  if (playerStick.weapon) {
+    ctx.fillStyle = '#ffe066';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`⚔ ${playerStick.weapon.name}`, 60, canvas.height - 20);
+  }
 }
 
 // Re-export the GameState type so other modules can refer to it without
