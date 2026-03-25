@@ -7,7 +7,7 @@ user-selected JSON file.
 
 ## Dependencies
 ### Imports
-- None (no internal imports; uses browser APIs only)
+- `upgrades.ts` — `PlayerStats`, `createDefaultStats` for `SaveData.playerStats`
 
 ### Used By
 - `src/menu.ts` — `exportSave`, `importSave`, `SaveData`
@@ -19,21 +19,24 @@ user-selected JSON file.
 The canonical shape of the save object.
 ```ts
 interface SaveData {
-  version: number;     // Schema version
-  timestamp: number;   // Unix epoch ms
-  playerName: string;  // Defaults to 'Player'; not yet surfaced in gameplay
+  version: number;          // Schema version (currently 2)
+  timestamp: number;        // Unix epoch ms
+  playerName: string;       // Defaults to 'Player'
+  completedLevels: string[]; // IDs of completed levels
+  playerStats: PlayerStats; // Level, XP, skill points and allocations
 }
 ```
 Increment `SAVE_VERSION` and add migration logic in `loadSave()` whenever this
 shape changes.
 
 ### `createDefaultSave()`
-Returns a fresh `SaveData` with `version: 1`, current timestamp, and
-`playerName: 'Player'`.
+Returns a fresh `SaveData` with `version: 2`, current timestamp, empty
+`completedLevels`, and default `playerStats` (from `upgrades.ts`).
 
 ### `loadSave()`
 Reads and parses from `localStorage[SAVE_KEY]`. Returns `null` on missing data
-or parse failure (logs a warning). Does NOT throw.
+or parse failure (logs a warning). Does NOT throw. Migrates v1 saves by
+backfilling a default `playerStats` if the field is absent.
 
 ### `persistSave(data)`
 Stamps a new `timestamp` and writes to `localStorage`. Called on every state
@@ -69,6 +72,8 @@ Calls `onError` on any failure.
 - Multiple save slots
 
 ## Change History
+- **2026-03-25 (build 6):** Bumped schema to `SAVE_VERSION = 2`; added `playerStats: PlayerStats`
+  to `SaveData`; updated `createDefaultSave` and `loadSave` (with v1→v2 migration).
 - **2026-03-23 (build 2):** Created initial save module with localStorage persistence,
   file export, and file import.
 

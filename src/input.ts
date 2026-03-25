@@ -41,6 +41,26 @@ export interface InputState {
   mouseX: number;
   /** Latest mouse cursor Y in client (canvas) coordinates — always updated. */
   mouseY: number;
+  /**
+   * True during the frame the player pressed '1' — spend a skill point on health.
+   * Only active on the world map.
+   */
+  skill1: boolean;
+  /**
+   * True during the frame the player pressed '2' — spend a skill point on attack.
+   * Only active on the world map.
+   */
+  skill2: boolean;
+  /**
+   * True during the frame the player pressed '3' — spend a skill point on defense.
+   * Only active on the world map.
+   */
+  skill3: boolean;
+  /**
+   * True during the frame the player pressed 'R' — respec (reset skill points).
+   * Only active on the world map.
+   */
+  respec: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +89,10 @@ const state: InputState = {
   punch: false,
   mouseX: 0,
   mouseY: 0,
+  skill1: false,
+  skill2: false,
+  skill3: false,
+  respec: false,
 };
 
 /** Touch tracking for swipe detection. */
@@ -95,7 +119,7 @@ export function getInput(): InputState {
 }
 
 /**
- * Resets per-frame input flags (jump, swipe, punch) but keeps held-state (touching, crouch).
+ * Resets per-frame input flags (jump, swipe, punch, skill keys) but keeps held-state (touching, crouch).
  * Call at the START of each frame, before reading input.
  */
 export function resetInput(): void {
@@ -105,6 +129,11 @@ export function resetInput(): void {
   state.punch = false;
   // Note: `crouch` is a held state — it is re-set each frame by pollKeyboard()
   state.crouch = false;
+  // Skill keys are per-frame pulses
+  state.skill1 = false;
+  state.skill2 = false;
+  state.skill3 = false;
+  state.respec = false;
 }
 
 /**
@@ -160,6 +189,7 @@ export function pollKeyboard(): void {
   if (keysDown.has('ArrowDown') || keysDown.has('s') || keysDown.has('S')) {
     state.crouch = true;
   }
+  // Note: skill1/2/3 and respec are set in onKeyDown as one-shot pulses
 }
 
 // ---------------------------------------------------------------------------
@@ -243,9 +273,14 @@ function onMouseUp(_e: MouseEvent): void {
   state.touching = false;
 }
 
-/** Key down: track pressed key. */
+/** Key down: track pressed key and fire one-shot skill pulses. */
 function onKeyDown(e: KeyboardEvent): void {
   keysDown.add(e.key);
+  // One-shot skill keys — fire on the frame the key is first pressed
+  if (e.key === '1') state.skill1 = true;
+  if (e.key === '2') state.skill2 = true;
+  if (e.key === '3') state.skill3 = true;
+  if (e.key === 'r' || e.key === 'R') state.respec = true;
 }
 
 /** Key up: release tracked key. */

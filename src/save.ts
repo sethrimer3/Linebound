@@ -4,19 +4,26 @@
  * and provides export-to-file and import-from-file helpers for the save menu.
  */
 
+import { PlayerStats, createDefaultStats } from './upgrades';
+
 /** Shape of the saved game data. Extend this as the game grows. */
 export interface SaveData {
   version: number;          // Schema version — bump when the shape changes
   timestamp: number;        // Unix epoch ms when the save was written
   playerName: string;       // Defaults to 'Player'; not yet surfaced in gameplay
   completedLevels: string[]; // IDs of levels the player has completed
+  /**
+   * Player stat record — level, XP, skill points and allocations.
+   * Absent in schema version 1 saves; filled with defaults on load.
+   */
+  playerStats: PlayerStats;
 }
 
 /** The localStorage key under which the save is stored. */
 const SAVE_KEY = 'linebound_save';
 
 /** Current schema version — increment if SaveData shape ever changes. */
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
 
 /**
  * Creates a fresh, default SaveData object.
@@ -28,12 +35,14 @@ export function createDefaultSave(): SaveData {
     timestamp: Date.now(),
     playerName: 'Player',
     completedLevels: [],
+    playerStats: createDefaultStats(),
   };
 }
 
 /**
  * Loads and parses the save from localStorage.
  * Returns null if nothing is stored or if the stored JSON is malformed.
+ * Migrates version 1 saves (no playerStats) by adding default stats.
  */
 export function loadSave(): SaveData | null {
   const raw = localStorage.getItem(SAVE_KEY);
@@ -43,6 +52,12 @@ export function loadSave(): SaveData | null {
     const parsed = JSON.parse(raw) as SaveData;
     // Basic version check — in future we can add migration logic here
     if (typeof parsed.version !== 'number') return null;
+
+    // Migrate v1 → v2: backfill playerStats if absent
+    if (!parsed.playerStats) {
+      parsed.playerStats = createDefaultStats();
+    }
+
     return parsed;
   } catch {
     console.warn('[save] Failed to parse saved data; starting fresh.');

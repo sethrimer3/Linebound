@@ -1,14 +1,73 @@
 "use strict";
 (() => {
+  // src/upgrades.ts
+  var BASE_XP = 100;
+  var LEVEL_XP_FACTOR = 1.1;
+  var BASE_MAX_HP = 100;
+  var BASE_ATTACK_MULT = 1;
+  var STAT_LEVEL_FACTOR = 1.1;
+  var SKILL_POINT_FACTOR = 1.1;
+  var SKILL_POINTS_PER_LEVEL = 2;
+  function xpForLevel(level) {
+    return Math.round(BASE_XP * Math.pow(LEVEL_XP_FACTOR, level - 1));
+  }
+  function createDefaultStats() {
+    return {
+      level: 1,
+      xp: 0,
+      xpToNext: xpForLevel(1),
+      skillPoints: 0,
+      skills: { health: 0, attack: 0, defense: 0 }
+    };
+  }
+  function computeEffectiveStats(stats) {
+    const levelMult = Math.pow(STAT_LEVEL_FACTOR, stats.level - 1);
+    return {
+      maxHp: Math.round(
+        BASE_MAX_HP * levelMult * Math.pow(SKILL_POINT_FACTOR, stats.skills.health)
+      ),
+      attackMult: parseFloat(
+        (BASE_ATTACK_MULT * levelMult * Math.pow(SKILL_POINT_FACTOR, stats.skills.attack)).toFixed(2)
+      ),
+      // Defense: 2 flat reduction per invested point, also scaled by level
+      defense: Math.round(stats.skills.defense * 2 * levelMult)
+    };
+  }
+  function addXp(stats, amount) {
+    if (amount <= 0) return 0;
+    stats.xp += amount;
+    let levelsGained = 0;
+    while (stats.xp >= stats.xpToNext) {
+      stats.xp -= stats.xpToNext;
+      stats.level += 1;
+      stats.skillPoints += SKILL_POINTS_PER_LEVEL;
+      stats.xpToNext = xpForLevel(stats.level);
+      levelsGained += 1;
+    }
+    return levelsGained;
+  }
+  function spendSkillPoint(stats, stat) {
+    if (stats.skillPoints <= 0) return false;
+    stats.skillPoints -= 1;
+    stats.skills[stat] += 1;
+    return true;
+  }
+  function resetSkills(stats) {
+    const spent = stats.skills.health + stats.skills.attack + stats.skills.defense;
+    stats.skills = { health: 0, attack: 0, defense: 0 };
+    stats.skillPoints += spent;
+  }
+
   // src/save.ts
   var SAVE_KEY = "linebound_save";
-  var SAVE_VERSION = 1;
+  var SAVE_VERSION = 2;
   function createDefaultSave() {
     return {
       version: SAVE_VERSION,
       timestamp: Date.now(),
       playerName: "Player",
-      completedLevels: []
+      completedLevels: [],
+      playerStats: createDefaultStats()
     };
   }
   function loadSave() {
@@ -17,6 +76,9 @@
     try {
       const parsed = JSON.parse(raw);
       if (typeof parsed.version !== "number") return null;
+      if (!parsed.playerStats) {
+        parsed.playerStats = createDefaultStats();
+      }
       return parsed;
     } catch {
       console.warn("[save] Failed to parse saved data; starting fresh.");
@@ -891,12 +953,13 @@
   var LEVEL_1_1 = {
     id: "1-1",
     name: "First Steps",
-    mapX: 0.15,
-    mapY: 0.5,
+    mapX: 0.08,
+    mapY: 0.28,
     unlocked: true,
     requires: [],
     spawnCol: 2,
     spawnRow: 13,
+    xpReward: 80,
     tiles: [
       // 30-column layout — meadow biome
       "..............................",
@@ -920,13 +983,14 @@
   var LEVEL_1_2 = {
     id: "1-2",
     name: "Stone Bridge",
-    mapX: 0.35,
-    mapY: 0.4,
+    mapX: 0.2,
+    mapY: 0.52,
     unlocked: false,
     requires: ["1-1"],
     spawnCol: 1,
     spawnRow: 13,
     color: "#7a9abf",
+    xpReward: 100,
     tiles: [
       // 36-column layout — stone/grey biome
       "....................................",
@@ -950,13 +1014,14 @@
   var LEVEL_1_3 = {
     id: "1-3",
     name: "Underground Cave",
-    mapX: 0.55,
-    mapY: 0.65,
+    mapX: 0.08,
+    mapY: 0.72,
     unlocked: false,
     requires: ["1-2"],
     color: "#5a4a7a",
     spawnCol: 1,
     spawnRow: 14,
+    xpReward: 120,
     tiles: [
       // 32-column layout — underground/cave biome
       "################################",
@@ -982,13 +1047,14 @@
   var LEVEL_2_1 = {
     id: "2-1",
     name: "Grasslands",
-    mapX: 0.75,
-    mapY: 0.3,
+    mapX: 0.38,
+    mapY: 0.28,
     unlocked: false,
     requires: ["1-3"],
     color: "#4caf50",
     spawnCol: 1,
     spawnRow: 15,
+    xpReward: 150,
     tiles: [
       // 50-column layout — bright meadow/grasslands biome
       "..................................................",
@@ -1011,12 +1077,182 @@
       "##################################################"
     ]
   };
+  var LEVEL_2_2 = {
+    id: "2-2",
+    name: "Lava Passage",
+    mapX: 0.5,
+    mapY: 0.52,
+    unlocked: false,
+    requires: ["2-1"],
+    color: "#e8622a",
+    spawnCol: 1,
+    spawnRow: 12,
+    xpReward: 180,
+    tiles: [
+      // 40-column layout — volcanic/lava biome
+      "........................................",
+      "........................................",
+      "........................................",
+      "..............ppppp.....................",
+      "........................................",
+      "..........G...................D.........",
+      "....ppppp...........pppppp..............",
+      "........................................",
+      "........................................",
+      "........................................",
+      "....................pppppp..............",
+      "........................................",
+      "........................................",
+      ".................................>......",
+      "################.......#################",
+      "################.......#################",
+      "################.......#################"
+    ]
+  };
+  var LEVEL_2_3 = {
+    id: "2-3",
+    name: "Cloud Crossing",
+    mapX: 0.38,
+    mapY: 0.72,
+    unlocked: false,
+    requires: ["2-2"],
+    color: "#64b5f6",
+    spawnCol: 1,
+    spawnRow: 13,
+    xpReward: 210,
+    tiles: [
+      // 44-column layout — sky/cloud biome
+      "............................................",
+      "............................................",
+      "............................................",
+      "...............ppppppp......................",
+      "............................................",
+      ".....ppppp........................pppp......",
+      "............................................",
+      "..............pppppp.........ppppppp........",
+      "............................................",
+      ".....@..................................W...",
+      "....ppppp.......ppppppp.................ppp.",
+      "............................................",
+      "............................................",
+      "............................................",
+      "................................>...........",
+      "############.....############.....##########",
+      "############.....############.....##########",
+      "############.....############.....##########"
+    ]
+  };
+  var LEVEL_3_1 = {
+    id: "3-1",
+    name: "Desert Mesa",
+    mapX: 0.68,
+    mapY: 0.28,
+    unlocked: false,
+    requires: ["2-3"],
+    color: "#d4a84b",
+    spawnCol: 1,
+    spawnRow: 12,
+    xpReward: 250,
+    tiles: [
+      // 46-column layout — desert/sandy biome with mesa formations
+      "..............................................",
+      "..............................................",
+      "######..............######..............######",
+      "######..............######..............######",
+      "######..............######..............######",
+      "..............................................",
+      "..............................................",
+      "......ppppp...................ppppp...........",
+      ".........G.....................D..............",
+      "....ppppp...........ppppppp...........pppp....",
+      "..............................................",
+      "..............................................",
+      "..............................................",
+      "..............................................",
+      "........................................>.....",
+      "##############################################",
+      "##############################################"
+    ]
+  };
+  var LEVEL_3_2 = {
+    id: "3-2",
+    name: "Sand Drifts",
+    mapX: 0.8,
+    mapY: 0.52,
+    unlocked: false,
+    requires: ["3-1"],
+    color: "#c19a6b",
+    spawnCol: 1,
+    spawnRow: 12,
+    xpReward: 290,
+    tiles: [
+      // 48-column layout — sandy desert with dune formations
+      "................................................",
+      "................................................",
+      "...ppppp..........ppppp..........ppppp..........",
+      "................................................",
+      ".....G.........................D.........W......",
+      "...ppppp.......ppppp..........ppppp.........pppp",
+      "................................................",
+      "................................................",
+      "................................................",
+      "........pppppp.....................pppppp.......",
+      "................................................",
+      "................................................",
+      "................................................",
+      "................................................",
+      "........................................>.......",
+      "####################.......#####################",
+      "####################.......#####################",
+      "####################.......#####################"
+    ]
+  };
+  var LEVEL_3_3 = {
+    id: "3-3",
+    name: "Ancient Sanctum",
+    mapX: 0.68,
+    mapY: 0.72,
+    unlocked: false,
+    requires: ["3-2"],
+    color: "#ffd700",
+    spawnCol: 1,
+    spawnRow: 16,
+    xpReward: 350,
+    tiles: [
+      // 52-column layout — ancient temple biome (final level)
+      "....................................................",
+      "....................................................",
+      "......ppppp...........ppppp...........ppppp.........",
+      "....................................................",
+      "....................................................",
+      "..........pppppppp..........pppppppp................",
+      "....................................................",
+      ".....G.........................D.............G......",
+      ".ppppp.....pppppppp.....pppppppp.....ppppppp........",
+      "....................................................",
+      "....................................................",
+      "....................................................",
+      "....................................................",
+      "..........................pppppppp..................",
+      "....................................................",
+      "....................................................",
+      "....................................................",
+      "....................................................",
+      "..........................................>.........",
+      "##################.......###########################"
+    ]
+  };
   var LEVELS = /* @__PURE__ */ new Map();
   function registerBuiltinLevels() {
     LEVELS.set(LEVEL_1_1.id, LEVEL_1_1);
     LEVELS.set(LEVEL_1_2.id, LEVEL_1_2);
     LEVELS.set(LEVEL_1_3.id, LEVEL_1_3);
     LEVELS.set(LEVEL_2_1.id, LEVEL_2_1);
+    LEVELS.set(LEVEL_2_2.id, LEVEL_2_2);
+    LEVELS.set(LEVEL_2_3.id, LEVEL_2_3);
+    LEVELS.set(LEVEL_3_1.id, LEVEL_3_1);
+    LEVELS.set(LEVEL_3_2.id, LEVEL_3_2);
+    LEVELS.set(LEVEL_3_3.id, LEVEL_3_3);
   }
   registerBuiltinLevels();
   function getLevelDef(id) {
@@ -1039,6 +1275,8 @@
     const cols = def.tiles[0]?.length ?? 0;
     const blocks = [];
     const weaponPickups = [];
+    let exitX;
+    let exitY;
     for (let r = 0; r < rows; r++) {
       const row = def.tiles[r] ?? "";
       for (let c = 0; c < cols; c++) {
@@ -1057,6 +1295,9 @@
             w: TILE_SIZE,
             h: 6
           });
+        } else if (ch === ">") {
+          exitX = c * TILE_SIZE + TILE_SIZE / 2;
+          exitY = r * TILE_SIZE + TILE_SIZE / 2;
         } else if (ch && ch in WEAPON_TILE_MAP) {
           const weaponId = WEAPON_TILE_MAP[ch];
           const weapon = getWeaponDef(weaponId);
@@ -1081,8 +1322,10 @@
       spawnY: def.spawnRow * TILE_SIZE,
       width,
       height,
-      groundY: height
+      groundY: height,
       // Ground at the very bottom of the level
+      exitX,
+      exitY
     };
   }
   function buildWorldMap(completedIds) {
@@ -1096,7 +1339,10 @@
         y: def.mapY,
         unlocked,
         completed: completedIds.has(def.id),
-        color: def.color ?? "#e94560"
+        color: def.color ?? "#e94560",
+        // Connections link each node back to its prerequisite levels;
+        // used by the renderer to draw path lines on the world map.
+        connections: def.requires
       });
     }
     return nodes;
@@ -1115,7 +1361,11 @@
     crouch: false,
     punch: false,
     mouseX: 0,
-    mouseY: 0
+    mouseY: 0,
+    skill1: false,
+    skill2: false,
+    skill3: false,
+    respec: false
   };
   var touchStartX = 0;
   var touchStartY = 0;
@@ -1131,6 +1381,10 @@
     state.swipeRight = false;
     state.punch = false;
     state.crouch = false;
+    state.skill1 = false;
+    state.skill2 = false;
+    state.skill3 = false;
+    state.respec = false;
   }
   function bindInput(canvas2) {
     unbindInput();
@@ -1224,6 +1478,10 @@
   }
   function onKeyDown(e) {
     keysDown.add(e.key);
+    if (e.key === "1") state.skill1 = true;
+    if (e.key === "2") state.skill2 = true;
+    if (e.key === "3") state.skill3 = true;
+    if (e.key === "r" || e.key === "R") state.respec = true;
   }
   function onKeyUp(e) {
     keysDown.delete(e.key);
@@ -1450,6 +1708,44 @@
       ctx2.stroke();
     }
   }
+  function drawExitMarker(ctx2, x, y, time) {
+    const pulse = 0.55 + 0.25 * Math.sin(time * 2 * Math.PI);
+    const w = 22;
+    const h = 34;
+    ctx2.save();
+    ctx2.globalAlpha = pulse * 0.4;
+    const grad = ctx2.createRadialGradient(x, y - h / 2, 4, x, y - h / 2, 32);
+    grad.addColorStop(0, "#4cff96");
+    grad.addColorStop(1, "rgba(76, 255, 150, 0)");
+    ctx2.fillStyle = grad;
+    ctx2.beginPath();
+    ctx2.arc(x, y - h / 2, 32, 0, Math.PI * 2);
+    ctx2.fill();
+    ctx2.restore();
+    ctx2.fillStyle = "#5a7a60";
+    ctx2.fillRect(x - w / 2 - 4, y - h, 5, h);
+    ctx2.fillRect(x + w / 2 - 1, y - h, 5, h);
+    ctx2.strokeStyle = "#5a7a60";
+    ctx2.lineWidth = 4;
+    ctx2.beginPath();
+    ctx2.arc(x + 1.5, y - h, w / 2 + 2, Math.PI, 0);
+    ctx2.stroke();
+    ctx2.save();
+    ctx2.globalAlpha = pulse;
+    ctx2.fillStyle = "#1e4d2e";
+    ctx2.fillRect(x - w / 2, y - h, w, h);
+    const innerGrad = ctx2.createLinearGradient(x, y - h, x, y);
+    innerGrad.addColorStop(0, "rgba(76, 255, 120, 0.6)");
+    innerGrad.addColorStop(1, "rgba(76, 255, 120, 0.05)");
+    ctx2.fillStyle = innerGrad;
+    ctx2.fillRect(x - w / 2, y - h, w, h);
+    ctx2.restore();
+    ctx2.fillStyle = "#4cff96";
+    ctx2.font = "bold 9px sans-serif";
+    ctx2.textAlign = "center";
+    ctx2.textBaseline = "bottom";
+    ctx2.fillText("EXIT", x, y - h - 4);
+  }
   function drawStickman(ctx2, s) {
     if (!s.alive) return;
     ctx2.strokeStyle = COLORS.stickman;
@@ -1543,7 +1839,7 @@
     }
     ctx2.restore();
   }
-  function drawWorldMap(ctx2, nodes, screenW, screenH, selectedId) {
+  function drawWorldMap(ctx2, nodes, screenW, screenH, selectedId, stats, levelUpMsg) {
     ctx2.fillStyle = COLORS.bg;
     ctx2.fillRect(0, 0, screenW, screenH);
     ctx2.fillStyle = COLORS.primary;
@@ -1554,23 +1850,30 @@
     if (nodes.length === 0) return;
     const padX = 80;
     const padY = 100;
-    const mapW = screenW - padX * 2;
+    const mapW = screenW - padX * 2 - 180;
     const mapH = screenH - padY * 2;
-    const screenNodes = nodes.map((n) => ({
-      ...n,
-      sx: padX + n.x * mapW,
-      sy: padY + n.y * mapH
-    }));
+    const nodeById = /* @__PURE__ */ new Map();
+    const screenNodes = nodes.map((n) => {
+      const sn = {
+        ...n,
+        sx: padX + n.x * mapW,
+        sy: padY + n.y * mapH
+      };
+      nodeById.set(n.id, { sx: sn.sx, sy: sn.sy });
+      return sn;
+    });
     ctx2.strokeStyle = COLORS.mapPath;
     ctx2.lineWidth = 3;
     ctx2.setLineDash([6, 4]);
-    for (let i = 1; i < screenNodes.length; i++) {
-      const prev = screenNodes[i - 1];
-      const curr = screenNodes[i];
-      ctx2.beginPath();
-      ctx2.moveTo(prev.sx, prev.sy);
-      ctx2.lineTo(curr.sx, curr.sy);
-      ctx2.stroke();
+    for (const n of screenNodes) {
+      for (const reqId of n.connections) {
+        const parent = nodeById.get(reqId);
+        if (!parent) continue;
+        ctx2.beginPath();
+        ctx2.moveTo(parent.sx, parent.sy);
+        ctx2.lineTo(n.sx, n.sy);
+        ctx2.stroke();
+      }
     }
     ctx2.setLineDash([]);
     const nodeRadius = 18;
@@ -1611,14 +1914,96 @@
         ctx2.fillText("\u{1F512}", n.sx, n.sy);
       }
     }
+    drawStatsPanel(ctx2, stats, screenW, screenH);
+    if (levelUpMsg) {
+      ctx2.fillStyle = "#ffe066";
+      ctx2.font = "bold 22px sans-serif";
+      ctx2.textAlign = "center";
+      ctx2.textBaseline = "top";
+      ctx2.fillText(levelUpMsg, screenW / 2, 80);
+    }
     ctx2.fillStyle = COLORS.muted;
     ctx2.font = "14px sans-serif";
     ctx2.textAlign = "center";
     ctx2.textBaseline = "bottom";
     ctx2.fillText(
-      "Tap a level to play  \u2022  Swipe up or press Space to start",
+      "Tap a level to play  \u2022  Space/Enter to start  \u2022  1/2/3: spend skill pts  \u2022  R: reset skills",
       screenW / 2,
       screenH - 20
+    );
+  }
+  function drawStatsPanel(ctx2, stats, screenW, _screenH) {
+    const effective = computeEffectiveStats(stats);
+    const panelW = 170;
+    const panelH = 210;
+    const panelX = screenW - panelW - 10;
+    const panelY = 10;
+    const pad = 10;
+    ctx2.fillStyle = "rgba(13, 13, 26, 0.88)";
+    ctx2.strokeStyle = "#333355";
+    ctx2.lineWidth = 1.5;
+    ctx2.beginPath();
+    ctx2.roundRect(panelX, panelY, panelW, panelH, 8);
+    ctx2.fill();
+    ctx2.stroke();
+    let y = panelY + pad;
+    ctx2.fillStyle = COLORS.primary;
+    ctx2.font = "bold 13px sans-serif";
+    ctx2.textAlign = "left";
+    ctx2.textBaseline = "top";
+    ctx2.fillText("Player Stats", panelX + pad, y);
+    y += 20;
+    ctx2.fillStyle = "#ffe066";
+    ctx2.font = "bold 12px sans-serif";
+    ctx2.fillText(`Level ${stats.level}`, panelX + pad, y);
+    y += 18;
+    const barW = panelW - pad * 2;
+    const barH = 8;
+    const xpRatio = stats.xpToNext > 0 ? Math.min(1, stats.xp / stats.xpToNext) : 0;
+    ctx2.fillStyle = "#222244";
+    ctx2.fillRect(panelX + pad, y, barW, barH);
+    ctx2.fillStyle = "#7b68ee";
+    ctx2.fillRect(panelX + pad, y, Math.round(barW * xpRatio), barH);
+    ctx2.strokeStyle = "#444466";
+    ctx2.lineWidth = 1;
+    ctx2.strokeRect(panelX + pad, y, barW, barH);
+    y += barH + 4;
+    ctx2.fillStyle = COLORS.muted;
+    ctx2.font = "10px sans-serif";
+    ctx2.fillText(`XP: ${stats.xp} / ${stats.xpToNext}`, panelX + pad, y);
+    y += 16;
+    ctx2.strokeStyle = "#333355";
+    ctx2.lineWidth = 1;
+    ctx2.beginPath();
+    ctx2.moveTo(panelX + pad, y);
+    ctx2.lineTo(panelX + panelW - pad, y);
+    ctx2.stroke();
+    y += 8;
+    const statLines = [
+      { label: "\u2764 HP", value: `${effective.maxHp}`, pts: stats.skills.health, key: "1" },
+      { label: "\u2694 ATK", value: `\xD7${effective.attackMult.toFixed(2)}`, pts: stats.skills.attack, key: "2" },
+      { label: "\u{1F6E1} DEF", value: `${effective.defense}`, pts: stats.skills.defense, key: "3" }
+    ];
+    for (const row of statLines) {
+      ctx2.fillStyle = COLORS.text;
+      ctx2.font = "12px sans-serif";
+      ctx2.textAlign = "left";
+      ctx2.fillText(`${row.label}: ${row.value}`, panelX + pad, y);
+      ctx2.fillStyle = COLORS.muted;
+      ctx2.font = "10px sans-serif";
+      ctx2.textAlign = "right";
+      ctx2.fillText(`[${row.pts}pts]  [${row.key}]`, panelX + panelW - pad, y + 2);
+      y += 18;
+    }
+    y += 4;
+    const hasPoints = stats.skillPoints > 0;
+    ctx2.fillStyle = hasPoints ? "#ffe066" : COLORS.muted;
+    ctx2.font = hasPoints ? "bold 11px sans-serif" : "11px sans-serif";
+    ctx2.textAlign = "left";
+    ctx2.fillText(
+      hasPoints ? `\u2605 ${stats.skillPoints} skill pts available!` : "No skill points available",
+      panelX + pad,
+      y
     );
   }
   function drawLine(ctx2, x1, y1, x2, y2) {
@@ -1638,12 +2023,17 @@
 
   // src/game.ts
   var GAME_SCENE_ID = "scene-game";
+  var EXIT_COLLECT_RADIUS = 32;
+  var EXIT_COLLECT_RADIUS_SQ = EXIT_COLLECT_RADIUS * EXIT_COLLECT_RADIUS;
+  var LEVEL_UP_BANNER_DURATION = 3.5;
   var canvas = null;
   var ctx = null;
   var rafId = null;
   var subState = "map";
   var mapNodes = [];
   var selectedMapId = "1-1";
+  var mapBannerText = "";
+  var mapBannerTimer = 0;
   var physicsWorld = null;
   var playerStick = null;
   var levelInstance = null;
@@ -1753,18 +2143,58 @@
     }
     rafId = requestAnimationFrame(loop);
   }
-  function updateMap(_dt) {
+  function updateMap(dt) {
     const input = getInput();
+    if (mapBannerTimer > 0) {
+      mapBannerTimer -= dt;
+      if (mapBannerTimer <= 0) {
+        mapBannerTimer = 0;
+        mapBannerText = "";
+      }
+    }
     if (input.jump && selectedMapId) {
       const node = mapNodes.find((n) => n.id === selectedMapId);
       if (node?.unlocked) {
         enterLevel(selectedMapId);
+        return;
       }
     }
+    const save = loadSave();
+    if (!save) return;
+    const stats = save.playerStats;
+    let changed = false;
+    if (input.skill1 && spendSkillPoint(stats, "health")) {
+      changed = true;
+      showMapBanner("Invested in \u2764 Health!");
+    }
+    if (input.skill2 && spendSkillPoint(stats, "attack")) {
+      changed = true;
+      showMapBanner("Invested in \u2694 Attack!");
+    }
+    if (input.skill3 && spendSkillPoint(stats, "defense")) {
+      changed = true;
+      showMapBanner("Invested in \u{1F6E1} Defense!");
+    }
+    if (input.respec) {
+      resetSkills(stats);
+      changed = true;
+      showMapBanner("Skills reset \u2014 all points refunded.");
+    }
+    if (changed) {
+      save.playerStats = stats;
+      persistSave(save);
+    }
+  }
+  function showMapBanner(text) {
+    mapBannerText = text;
+    mapBannerTimer = LEVEL_UP_BANNER_DURATION;
   }
   function drawMapFrame() {
     if (!ctx || !canvas) return;
-    drawWorldMap(ctx, mapNodes, canvas.width, canvas.height, selectedMapId);
+    const save = loadSave();
+    const stats = save?.playerStats ?? { level: 1, xp: 0, xpToNext: 100, skillPoints: 0, skills: { health: 0, attack: 0, defense: 0 } };
+    const banner = mapBannerTimer > 0 ? mapBannerText : void 0;
+    drawWorldMap(ctx, mapNodes, canvas.width, canvas.height, selectedMapId, stats, banner);
   }
   var PICKUP_COLLECT_RADIUS = 30;
   var PICKUP_COLLECT_RADIUS_SQ = PICKUP_COLLECT_RADIUS * PICKUP_COLLECT_RADIUS;
@@ -1791,6 +2221,7 @@
     const center = playerStick.center;
     camera.follow(center.x, center.y - 60, dt);
     checkWeaponPickups();
+    checkExitReached();
   }
   function checkWeaponPickups() {
     if (!levelInstance || !playerStick) return;
@@ -1806,12 +2237,42 @@
       }
     }
   }
+  function checkExitReached() {
+    if (!levelInstance || !playerStick) return;
+    if (levelInstance.exitX === void 0 || levelInstance.exitY === void 0) return;
+    const px = playerStick.pelvis.x;
+    const py = playerStick.pelvis.y;
+    const dx = px - levelInstance.exitX;
+    const dy = py - levelInstance.exitY;
+    if (dx * dx + dy * dy > EXIT_COLLECT_RADIUS_SQ) return;
+    const levelId = levelInstance.def.id;
+    const xpReward = levelInstance.def.xpReward ?? 80;
+    const save = loadSave();
+    if (!save) return;
+    if (!save.completedLevels.includes(levelId)) {
+      save.completedLevels.push(levelId);
+    }
+    const levelsGained = addXp(save.playerStats, xpReward);
+    if (levelsGained > 0) {
+      const plural = levelsGained > 1 ? "levels" : "level";
+      showMapBanner(
+        `Level Complete! +${xpReward} XP  \u2022  Level Up! (${levelsGained} ${plural})  \u2022  +${levelsGained * 2} skill pts`
+      );
+    } else {
+      showMapBanner(`Level Complete! +${xpReward} XP`);
+    }
+    persistSave(save);
+    enterMap();
+  }
   function drawPlayFrame(_dt) {
     if (!ctx || !canvas || !camera || !levelInstance || !playerStick) return;
     clearCanvas(ctx, canvas.width, canvas.height);
     camera.applyTransform(ctx);
     drawGround(ctx, levelInstance.groundY, levelInstance.width);
     drawBlocks(ctx, levelInstance.blocks);
+    if (levelInstance.exitX !== void 0 && levelInstance.exitY !== void 0) {
+      drawExitMarker(ctx, levelInstance.exitX, levelInstance.exitY, gameTime);
+    }
     drawWeaponPickups(ctx, levelInstance.weaponPickups, gameTime);
     drawStickman(ctx, playerStick);
     ctx.restore();
