@@ -30,10 +30,11 @@ Level definitions and world-map system. Defines levels as tile grids and provide
 - `connections: string[]` — prerequisite level IDs; used by the renderer to draw paths
 
 ### parseLevel(def)
-- Converts tile characters to Block objects, WeaponPickup array, and exit position
+- Converts tile characters to Block objects, WeaponPickup array, slimeSpawns array, and exit position
 - '#' = solid block, 'p' = thin platform (6 px tall)
 - '@'/'S'/'D'/'G'/'W' = weapon pedestals → sword / sword / dagger / greatsword / bow
 - '>' = exit tile — position recorded as `exitX`, `exitY` on the instance
+- 'E' = slime enemy spawn — bottom of tile recorded as `{ x, y }` in `slimeSpawns`
 
 ### buildWorldMap(completedIds)
 - Generates MapNode array from registered levels and completion state
@@ -78,6 +79,7 @@ S = sword pedestal
 D = dagger pedestal
 G = greatsword pedestal
 W = bow pedestal
+E = slime enemy spawn point
 ```
 
 ## Change History
@@ -87,3 +89,4 @@ W = bow pedestal
 
 - **Build 3:** Initial implementation — Level 1-1, tile parsing, world map
 - **Build 5:** Added WeaponPickup type and WEAPON_TILE_MAP; added levels 1-2, 1-3, 2-1; updated parseLevel to extract pickups
+- **Build 7:** Added `'E'` slime spawn tile and `slimeSpawns: Array<{x,y}>` to LevelInstance; added slime 'E' tiles to levels 1-1 and 1-2

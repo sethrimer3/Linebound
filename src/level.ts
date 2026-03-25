@@ -17,6 +17,7 @@
  *   'D' = dagger pedestal (grants dagger on walk-over)
  *   'G' = greatsword pedestal
  *   'W' = bow pedestal
+ *   'E' = slime enemy spawn point
  */
 
 import { Block } from './physics';
@@ -65,6 +66,11 @@ export interface LevelInstance {
   blocks: Block[];
   /** Weapon pickup items placed in the level. */
   weaponPickups: WeaponPickup[];
+  /**
+   * World-space spawn positions for slime enemies ('E' tiles).
+   * Each entry is a { x, y } world coordinate at the tile bottom.
+   */
+  slimeSpawns: Array<{ x: number; y: number }>;
   /** Player spawn position in world pixels. */
   spawnX: number;
   spawnY: number;
@@ -133,6 +139,7 @@ export interface MapNode {
  * Tile notes:
  *   '@' — sword pickup on the ground
  *   '>' — exit door
+ *   'E' — slime enemy spawn
  */
 const LEVEL_1_1: LevelDef = {
   id: '1-1',
@@ -159,7 +166,7 @@ const LEVEL_1_1: LevelDef = {
     '......@.......................',
     '...ppppp..........pppp........',
     '..............................',
-    '..............................',
+    '...........E.........E........',
     '...................>..........',
     '##############################',
   ],
@@ -173,6 +180,7 @@ const LEVEL_1_1: LevelDef = {
  * Second level — introduces gaps and a bridge section.
  * The player must jump across missing ground tiles.
  * A dagger pickup rewards careful exploration of the upper path.
+ * Two slimes patrol the ground sections.
  *
  * Layout: 36 columns × 16 rows
  * Spawn: column 1, row 13
@@ -204,7 +212,7 @@ const LEVEL_1_2: LevelDef = {
     '....................................',
     '....................................',
     '....................................',
-    '....................................',
+    '...............E.............E......',
     '........>...........................',
     '########......####......############',
   ],
@@ -601,7 +609,8 @@ const WEAPON_TILE_MAP: Record<string, string> = {
 /**
  * Parses a LevelDef into a playable LevelInstance.
  * Converts the tile grid into solid Block objects for the physics engine
- * and extracts all weapon pickups and the exit tile from the tile grid.
+ * and extracts all weapon pickups, slime spawn points, and the exit tile
+ * from the tile grid.
  *
  * @param def - The level definition to parse
  * @returns A ready-to-play LevelInstance
@@ -611,6 +620,7 @@ export function parseLevel(def: LevelDef): LevelInstance {
   const cols = def.tiles[0]?.length ?? 0;
   const blocks: Block[] = [];
   const weaponPickups: WeaponPickup[] = [];
+  const slimeSpawns: Array<{ x: number; y: number }> = [];
   let exitX: number | undefined;
   let exitY: number | undefined;
 
@@ -638,6 +648,13 @@ export function parseLevel(def: LevelDef): LevelInstance {
         // Exit tile — record the center of this tile as the exit position
         exitX = c * TILE_SIZE + TILE_SIZE / 2;
         exitY = r * TILE_SIZE + TILE_SIZE / 2;
+      } else if (ch === 'E') {
+        // Slime enemy spawn — record the bottom of this tile so the slime
+        // sits on the ground surface when it is created.
+        slimeSpawns.push({
+          x: c * TILE_SIZE + TILE_SIZE / 2,
+          y: (r + 1) * TILE_SIZE, // bottom of the tile = ground surface
+        });
       } else if (ch && ch in WEAPON_TILE_MAP) {
         // Weapon pickup placed on the ground at this tile position
         const weaponId = WEAPON_TILE_MAP[ch as keyof typeof WEAPON_TILE_MAP]!;
@@ -661,6 +678,7 @@ export function parseLevel(def: LevelDef): LevelInstance {
     def,
     blocks,
     weaponPickups,
+    slimeSpawns,
     spawnX: def.spawnCol * TILE_SIZE + TILE_SIZE / 2,
     spawnY: def.spawnRow * TILE_SIZE,
     width,

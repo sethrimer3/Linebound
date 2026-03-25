@@ -2,7 +2,7 @@
 
 ## Build Information
 
-**Current Build Number: 6**
+**Current Build Number: 7**
 
 > **IMPORTANT:** With each pull request, you must increment the build number by one in **THREE** places:
 >

@@ -28,12 +28,14 @@ import {
 import {
   Camera, clearCanvas, drawGround, drawBlocks,
   drawStickman, drawWorldMap, drawWeaponPickups, drawExitMarker,
+  drawSlimes,
 } from './renderer';
 import { loadSave, persistSave } from './save';
 import {
   addXp, spendSkillPoint, resetSkills, createDefaultStats,
   SKILL_POINTS_PER_LEVEL, type PlayerStats,
 } from './upgrades';
+import { Slime, createSlime } from './enemies';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -88,6 +90,9 @@ let physicsWorld: World | null = null;
 let playerStick: Stickman | null = null;
 let levelInstance: LevelInstance | null = null;
 let camera: Camera | null = null;
+
+/** Active slime enemies in the current level. */
+let slimes: Slime[] = [];
 
 /** Accumulated gameplay time in seconds (used for pickup and exit animation). */
 let gameTime = 0;
@@ -152,6 +157,7 @@ export function stopGame(): void {
   playerStick = null;
   levelInstance = null;
   camera = null;
+  slimes = [];
 
   const scene = document.getElementById(GAME_SCENE_ID);
   scene?.classList.add('hidden');
@@ -167,6 +173,7 @@ function enterMap(): void {
   physicsWorld = null;
   playerStick = null;
   levelInstance = null;
+  slimes = [];
 
   // Rebuild map nodes from persisted save data
   const save = loadSave();
@@ -201,6 +208,9 @@ function enterLevel(levelId: string): void {
   playerStick = createStickman(
     instance.spawnX, instance.spawnY, world, true,
   );
+
+  // Spawn slimes at all 'E' tile positions defined in this level
+  slimes = instance.slimeSpawns.map(sp => createSlime(sp.x, sp.y));
 
   // Set up camera
   camera = new Camera();
@@ -348,7 +358,7 @@ const PICKUP_COLLECT_RADIUS = 30;
 /** Pre-computed squared pickup collection radius to avoid per-frame multiply. */
 const PICKUP_COLLECT_RADIUS_SQ = PICKUP_COLLECT_RADIUS * PICKUP_COLLECT_RADIUS;
 
-/** Updates physics, stickman, and input during gameplay. */
+/** Updates physics, stickman, slimes, and input during gameplay. */
 function updatePlay(dt: number): void {
   if (!physicsWorld || !playerStick || !canvas || !camera) return;
 
@@ -388,6 +398,13 @@ function updatePlay(dt: number): void {
 
   // Step physics
   physicsWorld.step(dt);
+
+  // Update slimes — each slime tracks the player and jumps periodically
+  const playerCx = playerStick.pelvis.x;
+  const playerCy = playerStick.pelvis.y;
+  for (const slime of slimes) {
+    slime.update(dt, physicsWorld.groundY, physicsWorld.blocks, playerCx, playerCy);
+  }
 
   // Camera follows player
   const center = playerStick.center;
@@ -472,7 +489,7 @@ function checkExitReached(): void {
   enterMap();
 }
 
-/** Draws one gameplay frame: terrain, stickman, exit marker, UI. */
+/** Draws one gameplay frame: terrain, slimes, stickman, exit marker, UI. */
 function drawPlayFrame(_dt: number): void {
   if (!ctx || !canvas || !camera || !levelInstance || !playerStick) return;
 
@@ -491,6 +508,10 @@ function drawPlayFrame(_dt: number): void {
 
   // Draw weapon pickups in world space (before stickman so player renders on top)
   drawWeaponPickups(ctx, levelInstance.weaponPickups, gameTime);
+
+  // Draw slimes before the player stickman so the player renders on top
+  drawSlimes(ctx, slimes);
+
   drawStickman(ctx, playerStick);
 
   ctx.restore(); // Undo camera transform

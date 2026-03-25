@@ -21,6 +21,7 @@ import { Stickman, HEAD_RADIUS, EXTREMITY_SIZE } from './stickman';
 import { LevelInstance, MapNode, WeaponPickup, TILE_SIZE } from './level';
 import { WeaponDef } from './weapons';
 import { PlayerStats, computeEffectiveStats, xpForLevel } from './upgrades';
+import { Slime, SLIME_RADIUS } from './enemies';
 
 // ---------------------------------------------------------------------------
 // Colors
@@ -57,6 +58,12 @@ const COLORS = {
   // Weapon pickup glow
   pickupGlow: 'rgba(255, 220, 80, 0.55)',
   pickupIcon: '#ffe066',
+  // Slime enemy colors — classic green blob
+  slimeBody: '#3dba4e',
+  slimeBodyDark: '#2a8a36',
+  slimeHighlight: 'rgba(200, 255, 210, 0.55)',
+  slimeEye: '#ffffff',
+  slimePupil: '#1a1a1a',
 };
 
 // ---------------------------------------------------------------------------
@@ -449,6 +456,114 @@ export function drawExitMarker(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
   ctx.fillText('EXIT', x, y - h - 4);
+}
+
+/**
+ * Draws all living slime enemies in the level.
+ *
+ * Each slime is rendered as a squashed ellipse with:
+ *   • A dark-green shadow ellipse at ground level for depth
+ *   • A gradient-filled main body that squishes vertically on landing
+ *   • A specular highlight blob on the upper-left for a jelly sheen
+ *   • Two eyes (white circle + dark pupil) that look alive
+ *
+ * Dead slimes are skipped automatically.
+ *
+ * @param ctx    - Canvas 2D context (already in world coordinates)
+ * @param slimes - Array of slime entities from the game state
+ */
+export function drawSlimes(
+  ctx: CanvasRenderingContext2D,
+  slimes: Slime[],
+): void {
+  for (const slime of slimes) {
+    if (!slime.alive) continue;
+    drawSlime(ctx, slime);
+  }
+}
+
+/**
+ * Draws a single slime at its current position.
+ * Applies a squish/stretch deformation based on `slime.squish`:
+ *   • squish > 0 → widen and shorten (landing impact)
+ *   • squish = 0 → perfect circle at rest
+ *
+ * @param ctx   - Canvas 2D context (world coordinates)
+ * @param slime - The slime to draw
+ */
+function drawSlime(ctx: CanvasRenderingContext2D, slime: Slime): void {
+  const r = slime.radius;
+  const cx = slime.x;
+  // slime.y is the centre of the hitbox circle (bottom = slime.y + radius)
+  const cy = slime.y;
+
+  // Squish deformation: squish > 0 makes it wider and flatter
+  const scaleX = 1 + slime.squish * 0.45;
+  const scaleY = 1 - slime.squish * 0.3;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scaleX, scaleY);
+
+  // Drop shadow — faint dark oval below the body to suggest ground contact
+  ctx.save();
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = '#000000';
+  ctx.beginPath();
+  ctx.ellipse(0, r * 0.85, r * 0.85, r * 0.25, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Main body — radial gradient from bright green to dark green
+  const bodyGrad = ctx.createRadialGradient(
+    -r * 0.25, -r * 0.3, r * 0.1,  // inner highlight offset slightly up-left
+    0, 0, r,                          // outer edge at full radius
+  );
+  bodyGrad.addColorStop(0, COLORS.slimeBody);
+  bodyGrad.addColorStop(1, COLORS.slimeBodyDark);
+
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fillStyle = bodyGrad;
+  ctx.fill();
+
+  // Jelly highlight — a small bright translucent oval in the upper-left
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.28, -r * 0.35, r * 0.28, r * 0.18, -0.5, 0, Math.PI * 2);
+  ctx.fillStyle = COLORS.slimeHighlight;
+  ctx.fill();
+
+  ctx.restore(); // undo scale/translate for eyes
+
+  // Eyes — drawn in un-squished space so they don't distort oddly
+  const eyeOffsetX = r * 0.28;
+  const eyeOffsetY = -r * 0.1;
+  const eyeR = r * 0.2;
+  const pupilR = eyeR * 0.55;
+
+  // Left eye (white)
+  ctx.beginPath();
+  ctx.arc(cx - eyeOffsetX, cy + eyeOffsetY, eyeR, 0, Math.PI * 2);
+  ctx.fillStyle = COLORS.slimeEye;
+  ctx.fill();
+
+  // Right eye (white)
+  ctx.beginPath();
+  ctx.arc(cx + eyeOffsetX, cy + eyeOffsetY, eyeR, 0, Math.PI * 2);
+  ctx.fillStyle = COLORS.slimeEye;
+  ctx.fill();
+
+  // Left pupil
+  ctx.beginPath();
+  ctx.arc(cx - eyeOffsetX + 1, cy + eyeOffsetY + 1, pupilR, 0, Math.PI * 2);
+  ctx.fillStyle = COLORS.slimePupil;
+  ctx.fill();
+
+  // Right pupil
+  ctx.beginPath();
+  ctx.arc(cx + eyeOffsetX + 1, cy + eyeOffsetY + 1, pupilR, 0, Math.PI * 2);
+  ctx.fillStyle = COLORS.slimePupil;
+  ctx.fill();
 }
 
 /**
