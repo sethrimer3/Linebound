@@ -977,7 +977,7 @@
       "......@.......................",
       "...ppppp..........pppp........",
       "..............................",
-      "..............................",
+      "...........E.........E........",
       "...................>..........",
       "##############################"
     ]
@@ -1008,7 +1008,7 @@
       "....................................",
       "....................................",
       "....................................",
-      "....................................",
+      "...............E.............E......",
       "........>...........................",
       "########......####......############"
     ]
@@ -1277,6 +1277,7 @@
     const cols = def.tiles[0]?.length ?? 0;
     const blocks = [];
     const weaponPickups = [];
+    const slimeSpawns = [];
     let exitX;
     let exitY;
     for (let r = 0; r < rows; r++) {
@@ -1300,6 +1301,12 @@
         } else if (ch === ">") {
           exitX = c * TILE_SIZE + TILE_SIZE / 2;
           exitY = r * TILE_SIZE + TILE_SIZE / 2;
+        } else if (ch === "E") {
+          slimeSpawns.push({
+            x: c * TILE_SIZE + TILE_SIZE / 2,
+            y: (r + 1) * TILE_SIZE
+            // bottom of the tile = ground surface
+          });
         } else if (ch && ch in WEAPON_TILE_MAP) {
           const weaponId = WEAPON_TILE_MAP[ch];
           const weapon = getWeaponDef(weaponId);
@@ -1320,6 +1327,7 @@
       def,
       blocks,
       weaponPickups,
+      slimeSpawns,
       spawnX: def.spawnCol * TILE_SIZE + TILE_SIZE / 2,
       spawnY: def.spawnRow * TILE_SIZE,
       width,
@@ -1523,7 +1531,13 @@
     mapNodeCompleted: "#4caf50",
     // Weapon pickup glow
     pickupGlow: "rgba(255, 220, 80, 0.55)",
-    pickupIcon: "#ffe066"
+    pickupIcon: "#ffe066",
+    // Slime enemy colors — classic green blob
+    slimeBody: "#3dba4e",
+    slimeBodyDark: "#2a8a36",
+    slimeHighlight: "rgba(200, 255, 210, 0.55)",
+    slimeEye: "#ffffff",
+    slimePupil: "#1a1a1a"
   };
   var Camera = class {
     constructor() {
@@ -1747,6 +1761,70 @@
     ctx2.textAlign = "center";
     ctx2.textBaseline = "bottom";
     ctx2.fillText("EXIT", x, y - h - 4);
+  }
+  function drawSlimes(ctx2, slimes2) {
+    for (const slime of slimes2) {
+      if (!slime.alive) continue;
+      drawSlime(ctx2, slime);
+    }
+  }
+  function drawSlime(ctx2, slime) {
+    const r = slime.radius;
+    const cx = slime.x;
+    const cy = slime.y;
+    const scaleX = 1 + slime.squish * 0.45;
+    const scaleY = 1 - slime.squish * 0.3;
+    ctx2.save();
+    ctx2.translate(cx, cy);
+    ctx2.scale(scaleX, scaleY);
+    ctx2.save();
+    ctx2.globalAlpha = 0.25;
+    ctx2.fillStyle = "#000000";
+    ctx2.beginPath();
+    ctx2.ellipse(0, r * 0.85, r * 0.85, r * 0.25, 0, 0, Math.PI * 2);
+    ctx2.fill();
+    ctx2.restore();
+    const bodyGrad = ctx2.createRadialGradient(
+      -r * 0.25,
+      -r * 0.3,
+      r * 0.1,
+      // inner highlight offset slightly up-left
+      0,
+      0,
+      r
+      // outer edge at full radius
+    );
+    bodyGrad.addColorStop(0, COLORS.slimeBody);
+    bodyGrad.addColorStop(1, COLORS.slimeBodyDark);
+    ctx2.beginPath();
+    ctx2.arc(0, 0, r, 0, Math.PI * 2);
+    ctx2.fillStyle = bodyGrad;
+    ctx2.fill();
+    ctx2.beginPath();
+    ctx2.ellipse(-r * 0.28, -r * 0.35, r * 0.28, r * 0.18, -0.5, 0, Math.PI * 2);
+    ctx2.fillStyle = COLORS.slimeHighlight;
+    ctx2.fill();
+    ctx2.restore();
+    const eyeOffsetX = r * 0.28;
+    const eyeOffsetY = -r * 0.1;
+    const eyeR = r * 0.2;
+    const pupilR = eyeR * 0.55;
+    ctx2.beginPath();
+    ctx2.arc(cx - eyeOffsetX, cy + eyeOffsetY, eyeR, 0, Math.PI * 2);
+    ctx2.fillStyle = COLORS.slimeEye;
+    ctx2.fill();
+    ctx2.beginPath();
+    ctx2.arc(cx + eyeOffsetX, cy + eyeOffsetY, eyeR, 0, Math.PI * 2);
+    ctx2.fillStyle = COLORS.slimeEye;
+    ctx2.fill();
+    ctx2.beginPath();
+    ctx2.arc(cx - eyeOffsetX + 1, cy + eyeOffsetY + 1, pupilR, 0, Math.PI * 2);
+    ctx2.fillStyle = COLORS.slimePupil;
+    ctx2.fill();
+    ctx2.beginPath();
+    ctx2.arc(cx + eyeOffsetX + 1, cy + eyeOffsetY + 1, pupilR, 0, Math.PI * 2);
+    ctx2.fillStyle = COLORS.slimePupil;
+    ctx2.fill();
   }
   function drawStickman(ctx2, s) {
     if (!s.alive) return;
@@ -2024,6 +2102,145 @@
     ctx2.fill();
   }
 
+  // src/enemies.ts
+  var SLIME_GRAVITY = 1800;
+  var SLIME_MAX_FALL_SPEED = 600;
+  var SLIME_JUMP_VY = -480;
+  var SLIME_JUMP_VX = 150;
+  var SLIME_JUMP_INTERVAL = 2.2;
+  var SLIME_RADIUS = 14;
+  var SLIME_DEFAULT_HP = 30;
+  var SLIME_AGGRO_RANGE = 600;
+  var SQUISH_IMPACT_SCALE = 1.2;
+  var Slime = class {
+    constructor(x, y) {
+      /** Horizontal velocity in px/s. */
+      this.vx = 0;
+      /** Vertical velocity in px/s. */
+      this.vy = 0;
+      /** Whether the slime is resting on the ground this frame. */
+      this.grounded = false;
+      /** Whether this slime is alive. Dead slimes are skipped and removed. */
+      this.alive = true;
+      /**
+       * Squish factor (0 = no squish, 1 = fully squished).
+       * Driven by vertical speed: high downward speed → squishes on land.
+       */
+      this.squish = 0;
+      this.x = x;
+      this.y = y;
+      this.hp = SLIME_DEFAULT_HP;
+      this.jumpTimer = Math.random() * SLIME_JUMP_INTERVAL;
+    }
+    /**
+     * Returns the hitbox radius (constant for now, but exposed as a getter
+     * so it can be overridden by subclasses in the future).
+     */
+    get radius() {
+      return SLIME_RADIUS;
+    }
+    /**
+     * Updates the slime each frame.
+     *
+     * Steps:
+     *   1. Apply gravity to vy.
+     *   2. Clamp vy to terminal velocity.
+     *   3. Integrate position (Euler).
+     *   4. Resolve collisions against ground plane and terrain blocks.
+     *   5. If grounded, tick the jump timer; jump when it expires.
+     *   6. Animate the squish parameter.
+     *
+     * @param dt        - Delta time in seconds
+     * @param groundY   - Y-coordinate of the infinite ground plane
+     * @param blocks    - Terrain blocks for top-surface collision
+     * @param playerX   - Player's world X (for jump direction)
+     * @param playerY   - Player's world Y (used for aggro range calculation)
+     */
+    update(dt, groundY, blocks, playerX, playerY) {
+      if (!this.alive) return;
+      this.vy += SLIME_GRAVITY * dt;
+      if (this.vy > SLIME_MAX_FALL_SPEED) {
+        this.vy = SLIME_MAX_FALL_SPEED;
+      }
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      this.grounded = false;
+      this.resolveGround(groundY);
+      this.resolveBlocks(blocks);
+      const distToPlayer = Math.abs(playerX - this.x);
+      if (distToPlayer <= SLIME_AGGRO_RANGE) {
+        if (this.grounded) {
+          this.jumpTimer -= dt;
+          if (this.jumpTimer <= 0) {
+            this.jump(playerX);
+          }
+        }
+      }
+      this.squish = Math.max(0, this.squish - dt * 4);
+    }
+    /**
+     * Resolves collision with the infinite ground plane.
+     * Clamps the slime above the plane and stops downward velocity.
+     *
+     * @param groundY - Y coordinate of the ground surface
+     */
+    resolveGround(groundY) {
+      const bottom = this.y + this.radius;
+      if (bottom >= groundY) {
+        const impactVy = this.vy;
+        this.y = groundY - this.radius;
+        this.vy = 0;
+        this.vx *= 0.7;
+        this.grounded = true;
+        if (impactVy > 100) {
+          this.squish = Math.min(1, impactVy / SLIME_JUMP_VY * -SQUISH_IMPACT_SCALE);
+        }
+      }
+    }
+    /**
+     * Resolves collision with terrain blocks, pushing the slime above any
+     * block top it lands on. Only top-surface collision is handled (no
+     * side/bottom collision needed for basic slime gameplay).
+     *
+     * @param blocks - Terrain block array from the level instance
+     */
+    resolveBlocks(blocks) {
+      for (const b of blocks) {
+        if (this.x + this.radius < b.x || this.x - this.radius > b.x + b.w) {
+          continue;
+        }
+        const bottom = this.y + this.radius;
+        if (bottom >= b.y && bottom <= b.y + b.h + 4 && this.vy >= 0) {
+          const impactVy = this.vy;
+          this.y = b.y - this.radius;
+          this.vy = 0;
+          this.vx *= 0.7;
+          this.grounded = true;
+          if (impactVy > 100) {
+            this.squish = Math.min(1, impactVy / SLIME_JUMP_VY * -SQUISH_IMPACT_SCALE);
+          }
+        }
+      }
+    }
+    /**
+     * Launches the slime toward the player.
+     * Applies an upward impulse and a horizontal push in the player's direction.
+     * Resets the jump timer.
+     *
+     * @param playerX - World X of the player (used to determine jump direction)
+     */
+    jump(playerX) {
+      this.vy = SLIME_JUMP_VY;
+      const dir = Math.sign(playerX - this.x) || 1;
+      this.vx = dir * SLIME_JUMP_VX;
+      this.jumpTimer = SLIME_JUMP_INTERVAL;
+      this.grounded = false;
+    }
+  };
+  function createSlime(x, y) {
+    return new Slime(x, y - SLIME_RADIUS);
+  }
+
   // src/game.ts
   var GAME_SCENE_ID = "scene-game";
   var EXIT_COLLECT_RADIUS = 32;
@@ -2041,6 +2258,7 @@
   var playerStick = null;
   var levelInstance = null;
   var camera = null;
+  var slimes = [];
   var gameTime = 0;
   var onBackCallback = null;
   function initGame(onBack) {
@@ -2076,6 +2294,7 @@
     playerStick = null;
     levelInstance = null;
     camera = null;
+    slimes = [];
     const scene = document.getElementById(GAME_SCENE_ID);
     scene?.classList.add("hidden");
   }
@@ -2084,6 +2303,7 @@
     physicsWorld = null;
     playerStick = null;
     levelInstance = null;
+    slimes = [];
     const save = loadSave();
     const completed = new Set(save?.completedLevels ?? []);
     mapNodes = buildWorldMap(completed);
@@ -2108,6 +2328,7 @@
       world,
       true
     );
+    slimes = instance.slimeSpawns.map((sp) => createSlime(sp.x, sp.y));
     camera = new Camera();
     camera.resize(canvas?.width ?? 800, canvas?.height ?? 600);
     camera.x = instance.spawnX;
@@ -2221,6 +2442,11 @@
     }
     playerStick.update(dt, physicsWorld);
     physicsWorld.step(dt);
+    const playerCx = playerStick.pelvis.x;
+    const playerCy = playerStick.pelvis.y;
+    for (const slime of slimes) {
+      slime.update(dt, physicsWorld.groundY, physicsWorld.blocks, playerCx, playerCy);
+    }
     const center = playerStick.center;
     camera.follow(center.x, center.y - 60, dt);
     checkWeaponPickups();
@@ -2278,6 +2504,7 @@
       drawExitMarker(ctx, levelInstance.exitX, levelInstance.exitY, gameTime);
     }
     drawWeaponPickups(ctx, levelInstance.weaponPickups, gameTime);
+    drawSlimes(ctx, slimes);
     drawStickman(ctx, playerStick);
     ctx.restore();
     ctx.fillStyle = "#888";
