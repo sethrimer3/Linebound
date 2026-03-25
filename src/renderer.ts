@@ -612,6 +612,12 @@ function drawHeldWeapon(ctx: CanvasRenderingContext2D, s: Stickman): void {
 }
 
 /**
+ * Width of the stats panel in pixels.
+ * Must match the reservation in drawWorldMap (subtracted from mapW).
+ */
+const STATS_PANEL_WIDTH = 180;
+
+/**
  * Draws the world map: nodes for each level connected by prerequisite paths,
  * plus a player stats panel in the top-right corner.
  *
@@ -652,7 +658,7 @@ export function drawWorldMap(
   // Leave extra right padding for the stats panel.
   const padX = 80;
   const padY = 100;
-  const mapW = screenW - padX * 2 - 180; // 180 px reserved for the stats panel
+  const mapW = screenW - padX * 2 - STATS_PANEL_WIDTH; // reserve space for stats panel
   const mapH = screenH - padY * 2;
 
   // Build a lookup from id → screen position for path drawing
@@ -736,7 +742,7 @@ export function drawWorldMap(
   }
 
   // ---- Stats panel (top-right corner) ----
-  drawStatsPanel(ctx, stats, screenW, screenH);
+  drawStatsPanel(ctx, stats, screenW);
 
   // ---- Level-up banner ----
   if (levelUpMsg) {
@@ -765,13 +771,11 @@ export function drawWorldMap(
  * @param ctx    - Canvas rendering context
  * @param stats  - Player stats to display
  * @param screenW - Canvas width
- * @param screenH - Canvas height
  */
 function drawStatsPanel(
   ctx: CanvasRenderingContext2D,
   stats: PlayerStats,
   screenW: number,
-  _screenH: number,
 ): void {
   const effective = computeEffectiveStats(stats);
   const panelW = 170;

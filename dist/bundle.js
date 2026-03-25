@@ -29,7 +29,8 @@
       attackMult: parseFloat(
         (BASE_ATTACK_MULT * levelMult * Math.pow(SKILL_POINT_FACTOR, stats.skills.attack)).toFixed(2)
       ),
-      // Defense: 2 flat reduction per invested point, also scaled by level
+      // Defense: 2 flat reduction per invested point, also scaled by level.
+      // Each skill point grants `2 × levelMult` points of flat damage reduction.
       defense: Math.round(stats.skills.defense * 2 * levelMult)
     };
   }
@@ -78,6 +79,7 @@
       if (typeof parsed.version !== "number") return null;
       if (!parsed.playerStats) {
         parsed.playerStats = createDefaultStats();
+        parsed.version = 2;
       }
       return parsed;
     } catch {
@@ -1839,6 +1841,7 @@
     }
     ctx2.restore();
   }
+  var STATS_PANEL_WIDTH = 180;
   function drawWorldMap(ctx2, nodes, screenW, screenH, selectedId, stats, levelUpMsg) {
     ctx2.fillStyle = COLORS.bg;
     ctx2.fillRect(0, 0, screenW, screenH);
@@ -1850,7 +1853,7 @@
     if (nodes.length === 0) return;
     const padX = 80;
     const padY = 100;
-    const mapW = screenW - padX * 2 - 180;
+    const mapW = screenW - padX * 2 - STATS_PANEL_WIDTH;
     const mapH = screenH - padY * 2;
     const nodeById = /* @__PURE__ */ new Map();
     const screenNodes = nodes.map((n) => {
@@ -1914,7 +1917,7 @@
         ctx2.fillText("\u{1F512}", n.sx, n.sy);
       }
     }
-    drawStatsPanel(ctx2, stats, screenW, screenH);
+    drawStatsPanel(ctx2, stats, screenW);
     if (levelUpMsg) {
       ctx2.fillStyle = "#ffe066";
       ctx2.font = "bold 22px sans-serif";
@@ -1932,7 +1935,7 @@
       screenH - 20
     );
   }
-  function drawStatsPanel(ctx2, stats, screenW, _screenH) {
+  function drawStatsPanel(ctx2, stats, screenW) {
     const effective = computeEffectiveStats(stats);
     const panelW = 170;
     const panelH = 210;
@@ -2192,7 +2195,7 @@
   function drawMapFrame() {
     if (!ctx || !canvas) return;
     const save = loadSave();
-    const stats = save?.playerStats ?? { level: 1, xp: 0, xpToNext: 100, skillPoints: 0, skills: { health: 0, attack: 0, defense: 0 } };
+    const stats = save?.playerStats ?? createDefaultStats();
     const banner = mapBannerTimer > 0 ? mapBannerText : void 0;
     drawWorldMap(ctx, mapNodes, canvas.width, canvas.height, selectedMapId, stats, banner);
   }
@@ -2255,8 +2258,9 @@
     const levelsGained = addXp(save.playerStats, xpReward);
     if (levelsGained > 0) {
       const plural = levelsGained > 1 ? "levels" : "level";
+      const pts = levelsGained * SKILL_POINTS_PER_LEVEL;
       showMapBanner(
-        `Level Complete! +${xpReward} XP  \u2022  Level Up! (${levelsGained} ${plural})  \u2022  +${levelsGained * 2} skill pts`
+        `Level Complete! +${xpReward} XP  \u2022  Level Up! (${levelsGained} ${plural})  \u2022  +${pts} skill pts`
       );
     } else {
       showMapBanner(`Level Complete! +${xpReward} XP`);

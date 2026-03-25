@@ -31,7 +31,8 @@ import {
 } from './renderer';
 import { loadSave, persistSave } from './save';
 import {
-  addXp, spendSkillPoint, resetSkills, type PlayerStats,
+  addXp, spendSkillPoint, resetSkills, createDefaultStats,
+  SKILL_POINTS_PER_LEVEL, type PlayerStats,
 } from './upgrades';
 
 // ---------------------------------------------------------------------------
@@ -329,7 +330,7 @@ function showMapBanner(text: string): void {
 function drawMapFrame(): void {
   if (!ctx || !canvas) return;
   const save = loadSave();
-  const stats: PlayerStats = save?.playerStats ?? { level: 1, xp: 0, xpToNext: 100, skillPoints: 0, skills: { health: 0, attack: 0, defense: 0 } };
+  const stats: PlayerStats = save?.playerStats ?? createDefaultStats();
   const banner = mapBannerTimer > 0 ? mapBannerText : undefined;
   drawWorldMap(ctx, mapNodes, canvas.width, canvas.height, selectedMapId, stats, banner);
 }
@@ -457,8 +458,9 @@ function checkExitReached(): void {
   // Build a notification message for the world map banner
   if (levelsGained > 0) {
     const plural = levelsGained > 1 ? 'levels' : 'level';
+    const pts = levelsGained * SKILL_POINTS_PER_LEVEL;
     showMapBanner(
-      `Level Complete! +${xpReward} XP  •  Level Up! (${levelsGained} ${plural})  •  +${levelsGained * 2} skill pts`,
+      `Level Complete! +${xpReward} XP  •  Level Up! (${levelsGained} ${plural})  •  +${pts} skill pts`,
     );
   } else {
     showMapBanner(`Level Complete! +${xpReward} XP`);

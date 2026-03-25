@@ -56,6 +56,8 @@ export function loadSave(): SaveData | null {
     // Migrate v1 → v2: backfill playerStats if absent
     if (!parsed.playerStats) {
       parsed.playerStats = createDefaultStats();
+      // Stamp the updated schema version so migration doesn't repeat
+      parsed.version = 2;
     }
 
     return parsed;

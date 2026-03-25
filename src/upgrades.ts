@@ -145,7 +145,8 @@ export function computeEffectiveStats(stats: PlayerStats): EffectiveStats {
     attackMult: parseFloat(
       (BASE_ATTACK_MULT * levelMult * Math.pow(SKILL_POINT_FACTOR, stats.skills.attack)).toFixed(2),
     ),
-    // Defense: 2 flat reduction per invested point, also scaled by level
+    // Defense: 2 flat reduction per invested point, also scaled by level.
+    // Each skill point grants `2 × levelMult` points of flat damage reduction.
     defense: Math.round(stats.skills.defense * 2 * levelMult),
   };
 }

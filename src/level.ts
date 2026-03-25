@@ -635,7 +635,7 @@ export function parseLevel(def: LevelDef): LevelInstance {
           h: 6,
         });
       } else if (ch === '>') {
-        // Exit tile — record the centre of this tile as the exit position
+        // Exit tile — record the center of this tile as the exit position
         exitX = c * TILE_SIZE + TILE_SIZE / 2;
         exitY = r * TILE_SIZE + TILE_SIZE / 2;
       } else if (ch && ch in WEAPON_TILE_MAP) {
