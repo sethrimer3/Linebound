@@ -32,6 +32,7 @@ import {
   Vec2,
   GRAVITY,
 } from './physics';
+import { WeaponDef } from './weapons';
 
 // ---------------------------------------------------------------------------
 // Constants — skeleton dimensions & tuning
@@ -175,6 +176,12 @@ export class Stickman {
   /** Whether this stickman is alive. */
   alive = true;
 
+  /** Currently equipped weapon, or null for unarmed. */
+  weapon: WeaponDef | null = null;
+
+  /** Cooldown timer in seconds remaining before the next attack is allowed. */
+  attackCooldown = 0;
+
   /** True while the player is holding the crouch key. */
   crouching = false;
 
@@ -248,6 +255,11 @@ export class Stickman {
    */
   update(dt: number, world: World): void {
     if (!this.alive) return;
+
+    // Tick weapon cooldown down each frame
+    if (this.attackCooldown > 0) {
+      this.attackCooldown = Math.max(0, this.attackCooldown - dt);
+    }
 
     this.airborne = !this.onGround;
 
@@ -439,6 +451,19 @@ export class Stickman {
    */
   turnAround(): void {
     this.facing = (this.facing === 1 ? -1 : 1) as Facing;
+  }
+
+  /**
+   * Equips a weapon (or removes the current one when null is passed).
+   * Safe to call mid-game; the renderer will pick up the change on the
+   * next frame.
+   *
+   * @param weapon - The WeaponDef to equip, or null to go unarmed.
+   */
+  equipWeapon(weapon: WeaponDef | null): void {
+    this.weapon = weapon;
+    // Reset cooldown so the new weapon can be used immediately
+    this.attackCooldown = 0;
   }
 
   /**
