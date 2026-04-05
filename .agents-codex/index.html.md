@@ -11,12 +11,16 @@ loads the compiled TypeScript bundle.
 
 ### Stylesheet Dependencies
 - `css/style.css` — all game and menu styles
+- `favicon.svg` — SVG favicon loaded by the browser tab UI
 
 ### Used By
 - GitHub Pages (served as the default page at the site root)
 - Local development (`npx serve .` or `python -m http.server`)
 
 ## Key Components
+
+### `<link rel="icon" ...>`
+Loads `favicon.svg` so browser tabs/bookmarks use the game's custom icon.
 
 ### `<meta name="build">`
 Tracks the current build number. Must be updated (along with `agents.md` and
@@ -58,6 +62,8 @@ overlay button. Hidden/shown by `src/game.ts`.
 - Consider adding a `<noscript>` fallback message
 
 ## Change History
+- **2026-04-05 (build 8):** Added SVG favicon link in `<head>` and bumped all
+  build-number markers to build 8.
 - **2026-03-23 (build 2):** Created initial HTML structure with main menu and
   game scene stubs; added build badge; wired to TypeScript bundle.
 

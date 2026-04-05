@@ -524,6 +524,9 @@
   var FOOT_EXTRA_FORCE = GRAVITY * 0.6;
   var CROUCH_FORCE = 900;
   var PUNCH_IMPULSE = 320;
+  var ENEMY_AGGRO_RANGE = 500;
+  var ENEMY_ATTACK_RANGE = 65;
+  var ENEMY_ATTACK_COOLDOWN = 1.6;
   var Stickman = class {
     constructor(x, y, isPlayer) {
       /** Direction the stickman faces: 1 = right, -1 = left. */
@@ -544,6 +547,30 @@
       this.attackCooldown = 0;
       /** True while the player is holding the crouch key. */
       this.crouching = false;
+      /**
+       * Optional stroke-color override for rendering.
+       * Null → default white (player). Set to a color string for enemy stickmen.
+       */
+      this.strokeColor = null;
+      /** Maximum hit points — used to compute the HP bar fill ratio. */
+      this.maxHp = 100;
+      /**
+       * Timer in seconds for the hit-flash visual effect.
+       * Set to a small positive value on damage; renderer flashes white while > 0.
+       */
+      this.hitFlashTimer = 0;
+      /**
+       * Countdown (seconds) until this dead stickman is fully removed from the world.
+       *   -1 → alive (normal state)
+       *   ≥ 0 → dying ragdoll; removed when this reaches ≤ 0
+       */
+      this.deathTimer = -1;
+      /**
+       * Pulse flag: set to true for the single frame that `aiUpdate` fires a punch.
+       * Read by game.ts to trigger hit detection; cleared at the start of each
+       * `aiUpdate` call.
+       */
+      this.justPunched = false;
       this.isPlayer = isPlayer;
       this.pelvis = new Point(x, y);
       this.pelvis.label = "pelvis";
@@ -602,6 +629,9 @@
      * Called BEFORE the physics world step so forces/targets are set up.
      */
     update(dt, world) {
+      if (this.hitFlashTimer > 0) {
+        this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dt);
+      }
       if (!this.alive) return;
       if (this.attackCooldown > 0) {
         this.attackCooldown = Math.max(0, this.attackCooldown - dt);
@@ -811,6 +841,78 @@
       punchElbow.prevX = punchElbow.x - nx * v * 0.5;
       punchElbow.prevY = punchElbow.y - ny * v * 0.5;
     }
+    // ---------------------------------------------------------------------------
+    // Combat and damage
+    // ---------------------------------------------------------------------------
+    /**
+     * Reduces HP by `amount`, triggers death when HP reaches zero.
+     * Sets `hitFlashTimer` to show a brief white flash on the renderer.
+     *
+     * @param amount - Raw damage (positive integer; must be ≥ 1)
+     */
+    takeDamage(amount) {
+      if (!this.alive) return;
+      this.hp = Math.max(0, this.hp - amount);
+      this.hitFlashTimer = 0.14;
+      if (this.hp <= 0) {
+        this.alive = false;
+        this.walking = false;
+        this.deathTimer = 2.8;
+      }
+    }
+    /**
+     * Returns true if the stickman's active punch hand is within `range` pixels
+     * of the given world position. Used for hit detection after calling punch().
+     *
+     * @param worldX - World X to check against
+     * @param worldY - World Y to check against
+     * @param range  - Hit radius in world pixels
+     */
+    punchHandNear(worldX, worldY, range) {
+      const hand = this.facing === 1 ? this.handR : this.handL;
+      return Math.hypot(hand.x - worldX, hand.y - worldY) <= range;
+    }
+    // ---------------------------------------------------------------------------
+    // Enemy AI
+    // ---------------------------------------------------------------------------
+    /**
+     * Enemy AI update: steers the stickman toward a target and attacks in range.
+     * Call this each frame for non-player stickmen in place of manual input.
+     *
+     * State machine:
+     *   • Outside ENEMY_AGGRO_RANGE → idle (stop walking)
+     *   • Inside ENEMY_AGGRO_RANGE  → face target and walk toward it
+     *   • Inside ENEMY_ATTACK_RANGE → stop; punch when attackCooldown is 0
+     *
+     * Sets `justPunched = true` for exactly one frame when a punch fires so
+     * game.ts can resolve hit detection on the same frame.
+     *
+     * @param dt      - Frame delta time in seconds
+     * @param _world  - Physics world (reserved for future pathfinding use)
+     * @param targetX - World X of the target (player pelvis)
+     * @param targetY - World Y of the target (player pelvis)
+     */
+    aiUpdate(dt, _world, targetX, targetY) {
+      this.justPunched = false;
+      if (!this.alive) return;
+      const myX = this.pelvis.x;
+      const dist = Math.abs(targetX - myX);
+      if (dist > ENEMY_AGGRO_RANGE) {
+        this.walking = false;
+        return;
+      }
+      this.facing = targetX > myX ? 1 : -1;
+      if (dist <= ENEMY_ATTACK_RANGE) {
+        this.walking = false;
+        if (this.attackCooldown <= 0) {
+          this.punch(targetX, targetY, dt);
+          this.attackCooldown = ENEMY_ATTACK_COOLDOWN;
+          this.justPunched = true;
+        }
+      } else {
+        this.walking = true;
+      }
+    }
   };
   function createStickman(x, y, world, isPlayer = true) {
     const s = new Stickman(x, y, isPlayer);
@@ -977,7 +1079,7 @@
       "......@.......................",
       "...ppppp..........pppp........",
       "..............................",
-      "...........E.........E........",
+      "...........E.........E....A...",
       "...................>..........",
       "##############################"
     ]
@@ -1008,7 +1110,7 @@
       "....................................",
       "....................................",
       "....................................",
-      "...............E.............E......",
+      "...............E.............E..A...",
       "........>...........................",
       "########......####......############"
     ]
@@ -1035,7 +1137,7 @@
       "###########..............####...",
       "#######....................###..",
       "###.........................##..",
-      "#....@......................##..",
+      "#....@..............A.......##..",
       "#.......................>....##.",
       "#...........................###.",
       "#.........................#####.",
@@ -1073,7 +1175,7 @@
       "..................................................",
       ".....@..........W.......................W.........",
       "...ppppp.........ppppp......pppppp................",
-      "..................................................",
+      "...............A...................A..............",
       "..................................................",
       ".......................................>..........",
       "##################################################"
@@ -1103,7 +1205,7 @@
       "........................................",
       "........................................",
       "....................pppppp..............",
-      "........................................",
+      "............A.............A.............",
       "........................................",
       ".................................>......",
       "################.......#################",
@@ -1135,7 +1237,7 @@
       "............................................",
       ".....@..................................W...",
       "....ppppp.......ppppppp.................ppp.",
-      "............................................",
+      "..............A...............A.............",
       "............................................",
       "............................................",
       "................................>...........",
@@ -1168,7 +1270,7 @@
       ".........G.....................D..............",
       "....ppppp...........ppppppp...........pppp....",
       "..............................................",
-      "..............................................",
+      ".............A.....................A..........",
       "..............................................",
       "..............................................",
       "........................................>.....",
@@ -1199,7 +1301,7 @@
       "................................................",
       "................................................",
       "........pppppp.....................pppppp.......",
-      "................................................",
+      "..............A.................A...............",
       "................................................",
       "................................................",
       "................................................",
@@ -1237,7 +1339,7 @@
       "....................................................",
       "..........................pppppppp..................",
       "....................................................",
-      "....................................................",
+      "...............A...................A................",
       "....................................................",
       "....................................................",
       "..........................................>.........",
@@ -1278,6 +1380,7 @@
     const blocks = [];
     const weaponPickups = [];
     const slimeSpawns = [];
+    const stickmanSpawns = [];
     let exitX;
     let exitY;
     for (let r = 0; r < rows; r++) {
@@ -1307,6 +1410,11 @@
             y: (r + 1) * TILE_SIZE
             // bottom of the tile = ground surface
           });
+        } else if (ch === "A") {
+          stickmanSpawns.push({
+            x: c * TILE_SIZE + TILE_SIZE / 2,
+            y: r * TILE_SIZE
+          });
         } else if (ch && ch in WEAPON_TILE_MAP) {
           const weaponId = WEAPON_TILE_MAP[ch];
           const weapon = getWeaponDef(weaponId);
@@ -1328,6 +1436,7 @@
       blocks,
       weaponPickups,
       slimeSpawns,
+      stickmanSpawns,
       spawnX: def.spawnCol * TILE_SIZE + TILE_SIZE / 2,
       spawnY: def.spawnRow * TILE_SIZE,
       width,
@@ -1537,7 +1646,12 @@
     slimeBodyDark: "#2a8a36",
     slimeHighlight: "rgba(200, 255, 210, 0.55)",
     slimeEye: "#ffffff",
-    slimePupil: "#1a1a1a"
+    slimePupil: "#1a1a1a",
+    // Enemy stickman colors — red/crimson to distinguish from the player
+    enemyStickman: "#ff4040",
+    enemyStickmanHead: "#ff4040",
+    // Hit flash — bright white flashes when any stickman takes damage
+    hitFlash: "#ffffff"
   };
   var Camera = class {
     constructor() {
@@ -1826,13 +1940,21 @@
     ctx2.fillStyle = COLORS.slimePupil;
     ctx2.fill();
   }
-  function drawStickman(ctx2, s) {
-    if (!s.alive) return;
-    ctx2.strokeStyle = COLORS.stickman;
+  function drawStickman(ctx2, s, options) {
+    if (!s.alive && s.deathTimer < 0) return;
+    if (!s.alive && s.deathTimer >= 0) {
+      ctx2.save();
+      ctx2.globalAlpha = Math.max(0, Math.min(1, s.deathTimer));
+    }
+    const flashing = s.hitFlashTimer > 0;
+    const bodyColor = flashing ? COLORS.hitFlash : s.strokeColor ?? COLORS.stickman;
+    const headFill = flashing ? COLORS.hitFlash : s.strokeColor ?? COLORS.stickmanHead;
+    const extFill = flashing ? COLORS.hitFlash : COLORS.stickmanExtremity;
+    ctx2.strokeStyle = bodyColor;
     ctx2.lineWidth = 2.5;
     ctx2.lineCap = "round";
     ctx2.lineJoin = "round";
-    ctx2.fillStyle = COLORS.stickmanHead;
+    ctx2.fillStyle = headFill;
     ctx2.beginPath();
     ctx2.arc(s.head.x, s.head.y, HEAD_RADIUS, 0, Math.PI * 2);
     ctx2.fill();
@@ -1843,20 +1965,27 @@
     drawLine(ctx2, s.elbowR.x, s.elbowR.y, s.handR.x, s.handR.y);
     drawLine(ctx2, s.pelvis.x, s.pelvis.y, s.kneeL.x, s.kneeL.y);
     drawLine(ctx2, s.kneeL.x, s.kneeL.y, s.footL.x, s.footL.y);
+    drawLine(ctx2, s.pelvis.x, s.pelvis.y, s.kneeR.x, s.pelvis.y);
     drawLine(ctx2, s.pelvis.x, s.pelvis.y, s.kneeR.x, s.kneeR.y);
     drawLine(ctx2, s.kneeR.x, s.kneeR.y, s.footR.x, s.footR.y);
-    ctx2.fillStyle = COLORS.stickmanExtremity;
+    ctx2.fillStyle = extFill;
     drawSquare(ctx2, s.handL.x, s.handL.y, EXTREMITY_SIZE);
     drawSquare(ctx2, s.handR.x, s.handR.y, EXTREMITY_SIZE);
     drawSquare(ctx2, s.footL.x, s.footL.y, EXTREMITY_SIZE);
     drawSquare(ctx2, s.footR.x, s.footR.y, EXTREMITY_SIZE);
-    ctx2.fillStyle = COLORS.stickman;
+    ctx2.fillStyle = bodyColor;
     drawDot(ctx2, s.elbowL.x, s.elbowL.y, 2);
     drawDot(ctx2, s.elbowR.x, s.elbowR.y, 2);
     drawDot(ctx2, s.kneeL.x, s.kneeL.y, 2);
     drawDot(ctx2, s.kneeR.x, s.kneeR.y, 2);
-    if (s.weapon) {
+    if (s.weapon && s.alive) {
       drawHeldWeapon(ctx2, s);
+    }
+    if (options?.showHpBar && s.alive && s.hp < s.maxHp) {
+      drawStickmanHpBar(ctx2, s);
+    }
+    if (!s.alive && s.deathTimer >= 0) {
+      ctx2.restore();
     }
   }
   function drawHeldWeapon(ctx2, s) {
